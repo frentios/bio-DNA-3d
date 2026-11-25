@@ -25,6 +25,9 @@ import { ProposalAdvisorSection } from './components/ProposalAdvisorModal';
 import { JarvisHud } from './components/jarvis/JarvisHud';
 import { BootSequence } from './components/jarvis/BootSequence';
 import { PresenterBar } from './components/jarvis/PresenterBar';
+import { ArFollowPanel } from './components/jarvis/ArFollowPanel';
+import { ArFollowMode, ArFollowPhase } from './services/arFollow';
+import { HandAnchor } from './services/handGestureEngine';
 import { NUCLEIC_ACID_LESSON } from './services/lessonPlan';
 import {
   Dna,
@@ -57,6 +60,13 @@ export function App() {
   const [lessonIndex, setLessonIndex] = useState<number>(0);
   const [showQuestion, setShowQuestion] = useState<boolean>(false);
   const [hologram, setHologram] = useState<boolean>(false);
+  // AR bám theo tay
+  const [arFollowEnabled, setArFollowEnabled] = useState<boolean>(true);
+  const [arFollowMode, setArFollowMode] = useState<ArFollowMode>('FOLLOW');
+  const [arLockUpright, setArLockUpright] = useState<boolean>(false);
+  const [arPhase, setArPhase] = useState<ArFollowPhase>('REST');
+  const [handAnchors, setHandAnchors] = useState<HandAnchor[]>([]);
+  const [palmEuler, setPalmEuler] = useState<{ x: number; y: number; z: number } | null>(null);
 
   // 2. Sequence & Preset State
   const [activePresetId, setActivePresetId] = useState<string>('WC_1_TURN');
@@ -247,6 +257,8 @@ export function App() {
 
   const handleGestureFrame = useCallback((output: HandGestureComputeOutput) => {
     setTelemetry(output.telemetry);
+    setHandAnchors(output.handAnchors || []);
+    setPalmEuler(output.palmEuler ?? null);
     // Giữ nguyên góc xoay cuối cùng khi chuyển sang cử chỉ khác (chỉ ✋ và ✌️ mới đặt góc mới)
     if (output.targetWristEuler !== null) {
       setCameraWristEuler(output.targetWristEuler);
@@ -269,6 +281,18 @@ export function App() {
       setCameraOrientation('TOP_AXIS');
     }
   }, []);
+
+  // Chỉ ở bản dev: cho phép kiểm thử tự động đưa dữ liệu bàn tay giả lập vào ứng dụng
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const w = window as unknown as Record<string, unknown>;
+    w.__biomotionPushGesture = handleGestureFrame;
+    w.__biomotionSetAr = setArPassthrough;
+    return () => {
+      delete w.__biomotionPushGesture;
+      delete w.__biomotionSetAr;
+    };
+  }, [handleGestureFrame]);
 
   const handleSimulateGesture = (type: SimulatedGestureAction) => {
     if (type === 'PALM_3D') {
@@ -923,6 +947,10 @@ export function App() {
                 focusedStepIndex={focusedStepIndex}
                 autoRotate={autoRotate}
                 hologram={hologram}
+                handAnchors={handAnchors}
+                palmEuler={palmEuler}
+                arFollow={{ enabled: arFollowEnabled, mode: arFollowMode, lockUpright: arLockUpright }}
+                onArPhaseChange={setArPhase}
                 onSubunitHover={setHoveredInfo}
                 onSubunitSelect={(sub) => {
                   setSelectedSubunit(sub);
@@ -934,6 +962,19 @@ export function App() {
                   setVirtualWristDeg(deg);
                 }}
               />
+
+              {arPassthrough && (
+                <ArFollowPanel
+                  enabled={arFollowEnabled}
+                  onToggle={() => setArFollowEnabled((v) => !v)}
+                  mode={arFollowMode}
+                  onModeChange={setArFollowMode}
+                  lockUpright={arLockUpright}
+                  onToggleLock={() => setArLockUpright((v) => !v)}
+                  phase={arPhase}
+                  cameraOn={!!videoStream}
+                />
+              )}
 
               <JarvisHud
                 activeGesture={telemetry.primaryGesture}

@@ -18,7 +18,24 @@ export interface HandGestureComputeOutput {
   targetUnzipFactor: number | null;
   /** ✌️ Chuyển sang góc nhìn từ đỉnh */
   detectedCameraPreset: 'TOP_AXIS' | null;
+  /** Vị trí từng bàn tay trong khung camera (đã lật gương, đã lọc rung) — dùng cho AR bám tay */
+  handAnchors?: HandAnchor[];
+  /** Góc lòng bàn tay thứ nhất (radian, đã lọc) — có cả khi đang nắm tay; null nếu không thấy tay */
+  palmEuler?: { x: number; y: number; z: number } | null;
 }
+
+/** Một bàn tay trong khung camera: toạ độ chuẩn hoá [0..1], đã lật gương */
+export interface HandAnchor {
+  x: number;
+  y: number;
+  /** Chiều dài lòng bàn tay (cổ tay → gốc ngón giữa) theo tỉ lệ chiều cao khung camera */
+  size: number;
+  /** Tay đang nắm (đã chống nhấp nháy) */
+  closed: boolean;
+}
+
+/** Số khung hình liên tiếp để đổi trạng thái nắm / xoè của một bàn tay (tránh “thả rơi” mô hình do nhiễu) */
+const CLOSED_HOLD_FRAMES = 3;
 
 type Vec3 = { x: number; y: number; z: number };
 
@@ -127,10 +144,82 @@ export class HandGestureEngine {
   private prevWristPos: Vec3 | null = null;
   private prevTimeMs = 0;
 
+  // Bộ lọc riêng cho từng bàn tay (xếp theo thứ tự từ trái sang phải màn hình)
+  private anchorSlots: {
+    x: OneEuroFilter;
+    y: OneEuroFilter;
+    size: OneEuroFilter;
+    closed: boolean;
+    pending: number;
+  }[] = [];
+
   public processHands(
     multiHandLandmarks: NormalizedLandmark[][],
     wristSensitivity = 1.65,
-    timestampMs: number = performance.now()
+    timestampMs: number = performance.now(),
+    /** Tỉ lệ rộng/cao của khung camera (để đo cỡ bàn tay đúng tỉ lệ) */
+    videoAspect = 4 / 3
+  ): HandGestureComputeOutput {
+    const out = this.processGestures(multiHandLandmarks, wristSensitivity, timestampMs);
+    out.handAnchors = this.computeAnchors(multiHandLandmarks, timestampMs, videoAspect);
+    if (multiHandLandmarks.length > 0) {
+      const a = this.lastAngles();
+      out.palmEuler = { x: a.pitch, y: a.yaw, z: a.roll };
+    } else {
+      out.palmEuler = null;
+    }
+    return out;
+  }
+
+  private computeAnchors(hands: NormalizedLandmark[][], tMs: number, aspect: number): HandAnchor[] {
+    const raw = hands
+      .slice(0, 2)
+      .map((hand) => {
+        const p = (i: number) => ({ x: 1 - hand[i].x, y: hand[i].y, z: hand[i].z });
+        // Tâm lòng bàn tay: trung bình cổ tay và gốc 3 ngón
+        const pts = [p(0), p(5), p(9), p(17)];
+        const cx = pts.reduce((a, q) => a + q.x, 0) / pts.length;
+        const cy = pts.reduce((a, q) => a + q.y, 0) / pts.length;
+        const size = Math.hypot((p(9).x - p(0).x) * aspect, p(9).y - p(0).y);
+        return { x: cx, y: cy, size, closed: this.extractFeatures(p).fourFingersCurled };
+      })
+      .sort((a, b) => a.x - b.x);
+
+    if (raw.length !== this.anchorSlots.length) {
+      // Số tay thay đổi → làm mới bộ lọc để tay không “bay” từ vị trí của tay kia
+      this.anchorSlots = raw.map((r) => ({
+        x: new OneEuroFilter(1.2, 0.8),
+        y: new OneEuroFilter(1.2, 0.8),
+        size: new OneEuroFilter(0.8, 0.3),
+        closed: r.closed,
+        pending: 0
+      }));
+    }
+
+    return raw.map((r, i) => {
+      const slot = this.anchorSlots[i];
+      if (r.closed !== slot.closed) {
+        slot.pending += 1;
+        if (slot.pending >= CLOSED_HOLD_FRAMES) {
+          slot.closed = r.closed;
+          slot.pending = 0;
+        }
+      } else {
+        slot.pending = 0;
+      }
+      return {
+        x: slot.x.filter(r.x, tMs),
+        y: slot.y.filter(r.y, tMs),
+        size: slot.size.filter(r.size, tMs),
+        closed: slot.closed
+      };
+    });
+  }
+
+  private processGestures(
+    multiHandLandmarks: NormalizedLandmark[][],
+    wristSensitivity: number,
+    timestampMs: number
   ): HandGestureComputeOutput {
     if (multiHandLandmarks.length === 0) {
       this.resetTracking();

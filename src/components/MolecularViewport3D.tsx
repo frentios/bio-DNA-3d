@@ -9,6 +9,8 @@ import {
   ModelTabId,
   NucleotideCode
 } from '../types/molecular';
+import { HandAnchor } from '../services/handGestureEngine';
+import { ArFollowController, ArFollowMode, ArFollowPhase, videoToScreen } from '../services/arFollow';
 import {
   DynamicMeshRecord,
   SceneBuildContext
@@ -40,6 +42,14 @@ interface MolecularViewport3DProps {
   autoRotate: boolean;
   /** Chế độ hologram kiểu JARVIS */
   hologram?: boolean;
+  /** AR bám tay: vị trí bàn tay trong khung camera */
+  handAnchors?: HandAnchor[];
+  /** Góc lòng bàn tay (radian) — dùng khi mô hình nghiêng theo tay */
+  palmEuler?: { x: number; y: number; z: number } | null;
+  /** Cài đặt AR bám tay */
+  arFollow?: { enabled: boolean; mode: ArFollowMode; lockUpright: boolean };
+  /** Báo trạng thái cầm / đặt cho giao diện */
+  onArPhaseChange?: (phase: ArFollowPhase) => void;
   onSubunitHover: (info: HoveredSubunitInfo | null) => void;
   onSubunitSelect: (subunit: InspectableSubunit) => void;
   onManualRotationChange?: (deg: { pitch: number; yaw: number; roll: number }) => void;
@@ -61,6 +71,10 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
   focusedStepIndex,
   autoRotate,
   hologram = false,
+  handAnchors,
+  palmEuler = null,
+  arFollow,
+  onArPhaseChange,
   onSubunitHover,
   onSubunitSelect,
   onManualRotationChange
@@ -78,6 +92,11 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
   const highlightRingRef = useRef<THREE.Mesh | null>(null);
 
   const angularVelocityRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const followCtrlRef = useRef(new ArFollowController());
+  /** Chiều cao tự nhiên của mô hình (đơn vị 3D) — để quy đổi kích thước khi cầm trên tay */
+  const modelHeightRef = useRef(36);
+  const onArPhaseChangeRef = useRef(onArPhaseChange);
+  onArPhaseChangeRef.current = onArPhaseChange;
 
   const latestPropsRef = useRef({
     activeTab,
@@ -91,7 +110,11 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
     handZoomFactor,
     pointerScreenCoords,
     focusedStepIndex,
-    autoRotate
+    autoRotate,
+    arPassthrough,
+    handAnchors,
+    palmEuler,
+    arFollow
   });
 
   useEffect(() => {
@@ -107,7 +130,11 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
       handZoomFactor,
       pointerScreenCoords,
       focusedStepIndex,
-      autoRotate
+      autoRotate,
+      arPassthrough,
+      handAnchors,
+      palmEuler,
+      arFollow
     };
   });
 
@@ -202,6 +229,48 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
     highlightRing.visible = false;
     dnaGroup.add(highlightRing);
     highlightRingRef.current = highlightRing;
+
+    // ✋ AR bám tay: vòng sáng ở lòng bàn tay + tia nối lên mô hình (nằm ngoài nhóm mô hình)
+    const arRig = new THREE.Group();
+    const palmRings: THREE.Mesh[] = [];
+    const beams: THREE.Line[] = [];
+    for (let i = 0; i < 2; i++) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(2.2, 0.12, 12, 48),
+        new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.85, depthTest: false })
+      );
+      const inner = new THREE.Mesh(
+        new THREE.RingGeometry(0.6, 1.5, 32),
+        new THREE.MeshBasicMaterial({ color: 0xffb000, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthTest: false })
+      );
+      ring.add(inner);
+      ring.renderOrder = 20;
+      ring.visible = false;
+      arRig.add(ring);
+      palmRings.push(ring);
+      const beamGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+      const beam = new THREE.Line(
+        beamGeo,
+        new THREE.LineDashedMaterial({ color: 0x7df9ff, dashSize: 0.8, gapSize: 0.5, transparent: true, opacity: 0.8, depthTest: false })
+      );
+      beam.renderOrder = 19;
+      beam.visible = false;
+      arRig.add(beam);
+      beams.push(beam);
+    }
+    scene.add(arRig);
+    const zPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const tmpNdc = new THREE.Vector2();
+    const tmpPoint = new THREE.Vector3();
+    const tmpScale = new THREE.Vector3();
+    const followQuat = new THREE.Quaternion();
+    const followEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const qRoll = new THREE.Quaternion();
+    const qSpin = new THREE.Quaternion();
+    const zAxis = new THREE.Vector3(0, 0, 1);
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    let lastPhase: ArFollowPhase | null = null;
+    let wasFollowing = false;
 
     let wheelZoomMul = 1;
     let lastHoverKey = '';
@@ -312,7 +381,14 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
       if (group && cam) {
         // 1. ✊ Rotational Inertia (Quán tính xoay tự do khi nắm tay kéo rê)
         const vel = angularVelocityRef.current;
-        if (!isDragging && (Math.abs(vel.x) > 0.0002 || Math.abs(vel.y) > 0.0002)) {
+        const followHolding =
+          !!(state.arPassthrough && state.arFollow?.enabled) &&
+          ['HELD', 'TWO_HAND', 'LOST'].includes(followCtrlRef.current.getPhase());
+        if (followHolding) {
+          // Góc xoay do phần AR bám tay phía dưới đảm nhận; bỏ đà quán tính còn sót lại
+          vel.x = 0;
+          vel.y = 0;
+        } else if (!isDragging && (Math.abs(vel.x) > 0.0002 || Math.abs(vel.y) > 0.0002)) {
           group.rotation.x = THREE.MathUtils.clamp(
             group.rotation.x + vel.x,
             -Math.PI * 0.88,
@@ -335,6 +411,97 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
           group.rotation.y += 0.004;
         }
 
+        // ✋ AR bám tay (giai đoạn 1–3): vị trí / kích thước / góc lấy từ bộ điều khiển
+        const follow = !!(state.arPassthrough && state.arFollow?.enabled);
+        let followOwnsCamera = false;
+        if (follow && state.arFollow) {
+          const box = { w: container.clientWidth, h: Math.max(1, container.clientHeight) };
+          const vid = arVideoRef.current;
+          const vdim = { w: vid?.videoWidth || 640, h: vid?.videoHeight || 480 };
+          const hands = (state.handAnchors || []).map((a) => {
+            const p = videoToScreen(a, vdim, box);
+            return { x: p.x, y: p.y, size: a.size * p.scaleY, closed: a.closed };
+          });
+          const target = followCtrlRef.current.update(hands, state.arFollow.mode, nowMs);
+          if (target.phase !== lastPhase) {
+            lastPhase = target.phase;
+            onArPhaseChangeRef.current?.(target.phase);
+          }
+
+          // Màn hình → điểm trên mặt phẳng z = 0 (mặt phẳng chứa mô hình)
+          const toWorld = (x: number, y: number, outV: THREE.Vector3) => {
+            tmpNdc.set(x * 2 - 1, -(y * 2 - 1));
+            raycaster.setFromCamera(tmpNdc, cam);
+            return raycaster.ray.intersectPlane(zPlane, outV) ?? outV.set(0, 0, 0);
+          };
+
+          const active = target.phase !== 'REST';
+          followOwnsCamera = active;
+          if (active) {
+            toWorld(target.x, target.y, tmpPoint);
+            group.position.lerp(tmpPoint, 0.35);
+            // Chiều cao nhìn thấy được ở mặt phẳng z = 0
+            const visH = 2 * cam.position.z * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+            const sc = target.height ? THREE.MathUtils.clamp((target.height * visH) / modelHeightRef.current, 0.05, 3) : 1;
+            group.scale.lerp(tmpScale.set(sc, sc, sc), 0.25);
+          } else {
+            group.position.lerp(tmpPoint.set(0, 0, 0), 0.12);
+            group.scale.lerp(tmpScale.set(1, 1, 1), 0.12);
+          }
+
+          // Góc xoay
+          if (target.alignRoll !== null) {
+            // Hai tay: trục mô hình nằm dọc đường nối hai tay, xoay chậm quanh trục của chính nó
+            qRoll.setFromAxisAngle(zAxis, target.alignRoll);
+            qSpin.setFromAxisAngle(yAxis, nowMs * 0.0006);
+            followQuat.copy(qRoll).multiply(qSpin);
+            group.quaternion.slerp(followQuat, 0.25);
+          } else if (target.followPalmRotation) {
+            if (state.arFollow.lockUpright || !state.palmEuler) {
+              // 🔒 Khoá đứng thẳng: chỉ xoay chậm quanh trục dọc
+              qSpin.setFromAxisAngle(yAxis, nowMs * 0.0005);
+              group.quaternion.slerp(qSpin, 0.15);
+            } else {
+              followEuler.set(state.palmEuler.x, state.palmEuler.y, state.palmEuler.z, 'YXZ');
+              followQuat.setFromEuler(followEuler);
+              group.quaternion.slerp(followQuat, 0.25);
+            }
+          }
+
+          // Vòng sáng ở lòng bàn tay + tia nối
+          for (let i = 0; i < 2; i++) {
+            const h = target.holders[i];
+            const show = !!h;
+            palmRings[i].visible = show;
+            beams[i].visible = show;
+            if (h) {
+              toWorld(h.x, h.y, palmRings[i].position);
+              palmRings[i].lookAt(cam.position);
+              palmRings[i].rotation.z = nowMs * 0.003 * (i ? -1 : 1);
+              const pos = beams[i].geometry.attributes.position as THREE.BufferAttribute;
+              pos.setXYZ(0, palmRings[i].position.x, palmRings[i].position.y, palmRings[i].position.z);
+              pos.setXYZ(1, group.position.x, group.position.y, group.position.z);
+              pos.needsUpdate = true;
+              beams[i].computeLineDistances();
+            }
+          }
+          wasFollowing = true;
+        } else if (wasFollowing) {
+          // Vừa tắt bám tay: đưa mô hình về giữa, kích thước gốc
+          group.position.lerp(tmpPoint.set(0, 0, 0), 0.15);
+          group.scale.lerp(tmpScale.set(1, 1, 1), 0.15);
+          palmRings.forEach((r) => (r.visible = false));
+          beams.forEach((b) => (b.visible = false));
+          if (group.position.lengthSq() < 0.01 && Math.abs(group.scale.x - 1) < 0.01) {
+            group.position.set(0, 0, 0);
+            group.scale.set(1, 1, 1);
+            followCtrlRef.current.reset();
+            lastPhase = null;
+            onArPhaseChangeRef.current?.('REST');
+            wasFollowing = false;
+          }
+        }
+
         // 3. 👌 Thumb + Index Span Zoom (Thu phóng độc lập khoảng cách bàn tay)
         const defaultZ =
           state.activeTab === 'NUCLEOTIDE_STRUCTURE'
@@ -343,7 +510,10 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
             ? 66
             : 56;
 
-        if (state.focusedStepIndex !== null) {
+        if (followOwnsCamera) {
+          // Đang cầm trên tay: kích thước do bàn tay quyết định, camera giữ cố định
+          cam.position.z = THREE.MathUtils.lerp(cam.position.z, defaultZ, 0.1);
+        } else if (state.focusedStepIndex !== null) {
           cam.position.z = THREE.MathUtils.lerp(cam.position.z, 24, 0.08);
         } else if (state.handZoomFactor !== null) {
           const targetZ = (defaultZ / state.handZoomFactor) * wheelZoomMul;
@@ -498,6 +668,18 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
     else if (activeTab === 'DNA_VS_MRNA') buildDnaVsMrnaScene(ctx);
     else if (activeTab === 'MOLECULAR_DNA') buildMolecularDnaScene(ctx);
     else buildWatsonCrickScene(ctx);
+
+    // Đo chiều cao tự nhiên của mô hình (bỏ qua xoay / thu phóng hiện tại)
+    const saved = { q: group.quaternion.clone(), p: group.position.clone(), s: group.scale.clone() };
+    group.quaternion.identity();
+    group.position.set(0, 0, 0);
+    group.scale.set(1, 1, 1);
+    group.updateMatrixWorld(true);
+    const size = new THREE.Box3().setFromObject(group).getSize(new THREE.Vector3());
+    modelHeightRef.current = Math.max(10, activeTab === 'NUCLEOTIDE_STRUCTURE' ? Math.max(size.x, size.y) : size.y);
+    group.quaternion.copy(saved.q);
+    group.position.copy(saved.p);
+    group.scale.copy(saved.s);
   }, [activeTab, selectedNucleotideBase, steps]);
 
   // ✨ Chế độ hologram: đổi vật liệu sang ánh sáng cyan bán trong suốt (giữ lại vật liệu gốc để khôi phục)

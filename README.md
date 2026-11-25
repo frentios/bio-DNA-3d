@@ -34,6 +34,18 @@ Nhận dạng cử chỉ dùng [MediaPipe Hand Landmarker](https://ai.google.dev
 
 Nếu không có camera, có thể dùng **chuột** (kéo để xoay, cuộn để phóng to, bấm vào chi tiết để chọn), các **thanh trượt** và các **nút mô phỏng cử chỉ**.
 
+## AR: cầm mô hình trên tay
+
+Bấm **Đặt lên bàn (AR)** để hiện hình camera phía sau mô hình, rồi dùng bảng **Bám theo tay** ở góc dưới-trái khung 3D.
+
+| Chế độ | Cách dùng |
+|---|---|
+| **Luôn bám** | Đưa tay vào khung hình: mô hình lơ lửng trên lòng bàn tay, đi theo tay, đưa tay lại gần camera thì mô hình to ra. Mất dấu tay quá 0,5 giây thì mô hình trôi về giữa. |
+| **Cầm – đặt** | ✊ Nắm tay ở chỗ mô hình để nhấc lên · ✋ Xoè tay để đặt xuống tại chỗ (đặt lên bàn học trong hình camera) · Khi đã đặt, có thể xoè tay xoay mô hình như bình thường. |
+| **Hai tay** | Mô hình nằm giữa hai tay, trục xoắn nằm dọc đường nối hai tay. Kéo hai tay ra thì mô hình dài ra; nắm hai tay và kéo ra thì tách 2 mạch (ở tab nucleotide: tách 3 thành phần). |
+
+Nút **Nghiêng theo tay / Đứng thẳng**: mặc định mô hình nghiêng theo lòng bàn tay như cầm vật thật; bật **Đứng thẳng** để mô hình luôn thẳng đứng (chỉ di chuyển và to nhỏ theo tay), dễ quan sát hơn.
+
 ## Chế độ trình chiếu cho giáo viên
 
 Bấm **Trình chiếu** trên thanh đầu trang. Mô hình chiếm gần hết màn hình, bên dưới là thanh giáo án 10 bước theo Bài 5 (phần nucleic acid). Mỗi bước tự chuyển mô hình, góc nhìn, mức tách mạch và lớp hiển thị phù hợp, kèm ý chính chữ lớn và câu hỏi gợi mở.
@@ -81,7 +93,7 @@ Mở `http://localhost:3000`. Muốn dùng camera thì trình duyệt phải ch�
 | `npm run build` | Build bản phát hành vào `dist/` |
 | `npm run preview` | Xem trước bản đã build |
 | `npm run lint` | Kiểm tra kiểu TypeScript |
-| `npm test` | Kiểm thử bộ nhận dạng cử chỉ bằng bàn tay giả lập |
+| `npm test` | Kiểm thử bộ nhận dạng cử chỉ và AR bám tay bằng bàn tay giả lập |
 
 ## Cấu trúc mã nguồn
 
@@ -98,10 +110,11 @@ src/
 │   └── ProposalAdvisorModal.tsx     # Hướng dẫn 6 cử chỉ và bảng công thức
 ├── services/
 │   ├── handGestureEngine.ts         # Thuật toán nhận dạng cử chỉ
+│   ├── arFollow.ts                  # AR bám tay: cầm, đặt, hai tay
 │   ├── lessonPlan.ts                # Giáo án cho chế độ trình chiếu
 │   └── pdbService.ts                # Dữ liệu sinh học, trình tự mẫu, công thức
 └── types/molecular.ts
-tests/gestureEngine.test.ts          # Kiểm thử cử chỉ
+tests/                               # Kiểm thử cử chỉ và AR bám tay (npm test)
 scripts/prepare-mediapipe.mjs        # Chép WASM và tải mô hình nhận dạng tay để dùng offline
 public/sw.js, manifest.webmanifest   # PWA
 ```

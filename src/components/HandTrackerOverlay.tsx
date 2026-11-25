@@ -161,7 +161,8 @@ export const HandTrackerOverlay: React.FC<HandTrackerOverlayProps> = ({
         const gestureOutput = engineRef.current.processHands(
           landmarks,
           wristSensitivityRef.current,
-          nowMs
+          nowMs,
+          video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 4 / 3
         );
 
         const ctx = canvas.getContext('2d');
