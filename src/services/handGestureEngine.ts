@@ -8,336 +8,384 @@ export interface NormalizedLandmark {
 
 export interface HandGestureComputeOutput {
   telemetry: HandTelemetryState;
-  /** ✋ Direct 1:1 3D wrist Euler orientation (Pitch X, Yaw Y, Roll Z in radians) */
+  /** ✋ Góc Euler 3D của lòng bàn tay (Pitch X, Yaw Y, Roll Z, radian) */
   targetWristEuler: { x: number; y: number; z: number } | null;
-  /** ✊ Rotational inertia impulse when dragging with a closed fist */
+  /** ✊ Xung vận tốc góc khi nắm tay kéo rê */
   inertiaImpulse: { x: number; y: number } | null;
-  /** 👌 Target zoom factor controlled ONLY by Thumb-to-Index finger distance */
+  /** 👌 Hệ số zoom do khoảng cách ngón cái – ngón trỏ */
   targetZoomFactor: number | null;
-  /** 👍 Target unzipping factor when showing Thumbs-Up */
+  /** 👍 Mức tách mạch khi giơ ngón cái */
   targetUnzipFactor: number | null;
-  /** ✌️ Auto-switch to Top-Down Axis View when showing Peace sign */
+  /** ✌️ Chuyển sang góc nhìn từ đỉnh */
   detectedCameraPreset: 'TOP_AXIS' | null;
 }
 
+type Vec3 = { x: number; y: number; z: number };
+
+const sub = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const dot = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
+const scale = (a: Vec3, s: number): Vec3 => ({ x: a.x * s, y: a.y * s, z: a.z * s });
+const norm = (a: Vec3): Vec3 => {
+  const l = Math.hypot(a.x, a.y, a.z) || 1;
+  return { x: a.x / l, y: a.y / l, z: a.z / l };
+};
+const dist2D = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+  Math.hypot(a.x - b.x, a.y - b.y);
+
+/**
+ * Bộ lọc One-Euro (Casiez et al., 2012): làm mượt mạnh khi tay đứng yên,
+ * giảm độ trễ khi tay chuyển động nhanh. Không phụ thuộc tốc độ khung hình.
+ */
+class OneEuroFilter {
+  private xPrev: number | null = null;
+  private dxPrev = 0;
+  private tPrev = 0;
+
+  constructor(
+    private minCutoff = 1.0,
+    private beta = 0.4,
+    private dCutoff = 1.0
+  ) {}
+
+  private alpha(cutoff: number, dt: number) {
+    const tau = 1 / (2 * Math.PI * cutoff);
+    return 1 / (1 + tau / dt);
+  }
+
+  filter(x: number, tMs: number): number {
+    if (this.xPrev === null) {
+      this.xPrev = x;
+      this.tPrev = tMs;
+      return x;
+    }
+    const dt = Math.max(1e-3, (tMs - this.tPrev) / 1000);
+    this.tPrev = tMs;
+    const dx = (x - this.xPrev) / dt;
+    const aD = this.alpha(this.dCutoff, dt);
+    this.dxPrev = this.dxPrev + aD * (dx - this.dxPrev);
+    const cutoff = this.minCutoff + this.beta * Math.abs(this.dxPrev);
+    const a = this.alpha(cutoff, dt);
+    this.xPrev = this.xPrev + a * (x - this.xPrev);
+    return this.xPrev;
+  }
+
+  value() {
+    return this.xPrev ?? 0;
+  }
+
+  reset() {
+    this.xPrev = null;
+    this.dxPrev = 0;
+  }
+}
+
+/** Số khung hình liên tiếp một cử chỉ mới phải giữ ổn định trước khi được chấp nhận */
+const GESTURE_HOLD_FRAMES = 4;
+/** Ngưỡng khoảng cách (đã chuẩn hoá theo cỡ lòng bàn tay) để "chụm" ngón cái + ngón trỏ bắt đầu zoom */
+const PINCH_ENGAGE_SPAN = 0.22;
+const ZOOM_MIN = 0.55;
+const ZOOM_MAX = 2.45;
+/** Hệ số đổi khoảng mở ngón → zoom (giữ nguyên độ nhạy như bản cũ: 1,9× zoom cho 1,17 đơn vị span) */
+const ZOOM_PER_SPAN = (ZOOM_MAX - ZOOM_MIN) / (1.35 - 0.18);
+
+interface HandFeatures {
+  wrist: Vec3;
+  thumbTip: Vec3;
+  indexTip: Vec3;
+  span: number;
+  indexExtended: boolean;
+  middleExtended: boolean;
+  ringExtended: boolean;
+  pinkyExtended: boolean;
+  fourFingersCurled: boolean;
+  isThumbsUp: boolean;
+  thumbAwayFromPalm: boolean;
+}
+
 export class HandGestureEngine {
-  private prevWristPos: { x: number; y: number; z: number } | null = null;
-  private smoothedWristEuler: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
+  private filters = { pitch: new OneEuroFilter(), yaw: new OneEuroFilter(), roll: new OneEuroFilter() };
+  private prevAcross: Vec3 | null = null;
   private currentZoomNormalized = 1.0;
+
+  // Chống nhấp nháy
+  private committedGesture: ActiveGestureType = 'IDLE';
+  private candidateGesture: ActiveGestureType = 'IDLE';
+  private candidateFrames = 0;
+
+  // Trạng thái zoom
+  private zoomEngaged = false;
+  private zoomEngageSpan = 0;
+  private zoomAtEngage = 1;
+
+  // Quán tính nắm tay
+  private prevWristPos: Vec3 | null = null;
+  private prevTimeMs = 0;
 
   public processHands(
     multiHandLandmarks: NormalizedLandmark[][],
-    wristSensitivity = 1.65
+    wristSensitivity = 1.65,
+    timestampMs: number = performance.now()
   ): HandGestureComputeOutput {
-    const handsCount = multiHandLandmarks.length;
-
-    if (handsCount === 0) {
-      this.prevWristPos = null;
-      return {
-        telemetry: {
-          handsDetected: 0,
-          primaryGesture: 'IDLE',
-          gestureConfidence: 0,
-          indexTipScreen: null,
-          thumbTipScreen: null,
-          pinchDistance: 0,
-          zoomLevelNormalized: Number(this.currentZoomNormalized.toFixed(2)),
-          handRollDeg: 0,
-          handPitchDeg: 0,
-          handYawDeg: 0,
-          inertiaSpeed: 0
-        },
-        targetWristEuler: null,
-        inertiaImpulse: null,
-        targetZoomFactor: null,
-        targetUnzipFactor: null,
-        detectedCameraPreset: null
-      };
+    if (multiHandLandmarks.length === 0) {
+      this.resetTracking();
+      return this.buildOutput('IDLE', 0, null, { pitch: 0, yaw: 0, roll: 0 });
     }
 
     const hand = multiHandLandmarks[0];
-    // Mirror X coordinate so webcam movement matches screen left/right naturally
-    const wrist = { x: 1 - hand[0].x, y: hand[0].y, z: hand[0].z };
-    const thumbIp = { x: 1 - hand[3].x, y: hand[3].y, z: hand[3].z };
-    const thumbTip = { x: 1 - hand[4].x, y: hand[4].y, z: hand[4].z };
+    // Lật trục X để chuyển động trước webcam khớp với trái/phải trên màn hình
+    const p = (i: number): Vec3 => ({ x: 1 - hand[i].x, y: hand[i].y, z: hand[i].z });
 
-    const indexMcp = { x: 1 - hand[5].x, y: hand[5].y, z: hand[5].z };
-    const indexPip = { x: 1 - hand[6].x, y: hand[6].y, z: hand[6].z };
-    const indexTip = { x: 1 - hand[8].x, y: hand[8].y, z: hand[8].z };
+    const features = this.extractFeatures(p);
+    const angles = this.computePalmAngles(p, wristSensitivity, timestampMs);
 
-    const middleMcp = { x: 1 - hand[9].x, y: hand[9].y, z: hand[9].z };
-    const middlePip = { x: 1 - hand[10].x, y: hand[10].y, z: hand[10].z };
-    const middleTip = { x: 1 - hand[12].x, y: hand[12].y, z: hand[12].z };
+    // 1. Phân loại thô cho khung hình này
+    const raw = this.classify(features);
 
-    const ringPip = { x: 1 - hand[14].x, y: hand[14].y, z: hand[14].z };
-    const ringTip = { x: 1 - hand[16].x, y: hand[16].y, z: hand[16].z };
+    // 2. Chống nhấp nháy: cử chỉ mới phải giữ đủ số khung hình
+    if (raw === this.committedGesture) {
+      this.candidateGesture = raw;
+      this.candidateFrames = 0;
+    } else if (raw === this.candidateGesture) {
+      this.candidateFrames += 1;
+      if (this.candidateFrames >= GESTURE_HOLD_FRAMES) {
+        this.onGestureChange(this.committedGesture, raw, features);
+        this.committedGesture = raw;
+        this.candidateFrames = 0;
+      }
+    } else {
+      this.candidateGesture = raw;
+      this.candidateFrames = 1;
+    }
 
-    const pinkyMcp = { x: 1 - hand[17].x, y: hand[17].y, z: hand[17].z };
-    const pinkyPip = { x: 1 - hand[18].x, y: hand[18].y, z: hand[18].z };
-    const pinkyTip = { x: 1 - hand[20].x, y: hand[20].y, z: hand[20].z };
+    return this.buildOutput(this.committedGesture, multiHandLandmarks.length, features, angles, timestampMs);
+  }
 
-    // =========================================================================
-    // ✋ PALM 3D ORIENTATION MATH (Roll Z, Pitch X, Yaw Y)
-    // =========================================================================
-    const dxUp = middleMcp.x - wrist.x;
-    const dyUp = wrist.y - middleMcp.y;
-    const dzUp = middleMcp.z - wrist.z;
+  /** Đặt lại khi mất dấu bàn tay */
+  private resetTracking() {
+    this.prevWristPos = null;
+    this.prevAcross = null;
+    this.zoomEngaged = false;
+    this.committedGesture = 'IDLE';
+    this.candidateGesture = 'IDLE';
+    this.candidateFrames = 0;
+    this.filters.pitch.reset();
+    this.filters.yaw.reset();
+    this.filters.roll.reset();
+  }
 
-    const dxAcross = pinkyMcp.x - indexMcp.x;
-    const dzAcross = pinkyMcp.z - indexMcp.z;
+  private extractFeatures(p: (i: number) => Vec3): HandFeatures {
+    const wrist = p(0);
+    const thumbIp = p(3);
+    const thumbTip = p(4);
+    const indexMcp = p(5);
+    const indexPip = p(6);
+    const indexTip = p(8);
+    const middleMcp = p(9);
+    const middlePip = p(10);
+    const middleTip = p(12);
+    const ringPip = p(14);
+    const ringTip = p(16);
+    const pinkyPip = p(18);
+    const pinkyTip = p(20);
 
-    // Roll (Z-axis): Nghiêng cổ tay sang trái/phải
-    const rawRollRad = -Math.atan2(dxUp, Math.max(0.06, dyUp)) * wristSensitivity;
+    // Cỡ lòng bàn tay làm thước đo → không phụ thuộc khoảng cách tay tới camera
+    const palm = Math.max(0.075, dist2D(wrist, middleMcp));
+    const span = dist2D(thumbTip, indexTip) / palm;
 
-    // Pitch (X-axis): Úp/ngửa bàn tay lên hoặc chúc xuống
-    const rawPitchRad = (dzUp * 3.8 + (middleMcp.y - 0.5) * 1.95) * wristSensitivity;
-
-    // Yaw (Y-axis): Xoay lòng bàn tay trái/phải 360°
-    const palmTwistRad = Math.atan2(dzAcross, Math.abs(dxAcross) + 0.04) * 2.2;
-    const wristAzimuthRad = (middleMcp.x - 0.5) * Math.PI * 1.9;
-    const rawYawRad = (palmTwistRad + wristAzimuthRad) * wristSensitivity;
-
-    const smoothAlpha = 0.34;
-    this.smoothedWristEuler = {
-      x: this.smoothedWristEuler.x + (rawPitchRad - this.smoothedWristEuler.x) * smoothAlpha,
-      y: this.smoothedWristEuler.y + (rawYawRad - this.smoothedWristEuler.y) * smoothAlpha,
-      z: this.smoothedWristEuler.z + (rawRollRad - this.smoothedWristEuler.z) * smoothAlpha
-    };
-
-    const handRollDeg = Math.round((this.smoothedWristEuler.z * 180) / Math.PI);
-    const handPitchDeg = Math.round((this.smoothedWristEuler.x * 180) / Math.PI);
-    const handYawDeg = Math.round((this.smoothedWristEuler.y * 180) / Math.PI);
-
-    // =========================================================================
-    // FINGER EXTENSION & SCALE-INVARIANT THUMB-INDEX SPAN
-    // =========================================================================
-    // Reference palm length so that Thumb-to-Index distance is 100% independent of hand-to-camera distance
-    const palmReferenceScale = Math.max(0.075, this.dist2D(wrist, middleMcp));
-    const rawThumbIndexDist = this.dist2D(thumbTip, indexTip);
-    const thumbIndexSpanRatio = rawThumbIndexDist / palmReferenceScale;
-
-    const indexExtended = this.dist2D(indexTip, wrist) > this.dist2D(indexPip, wrist) * 1.14;
-    const middleExtended = this.dist2D(middleTip, wrist) > this.dist2D(middlePip, wrist) * 1.15;
-    const ringExtended = this.dist2D(ringTip, wrist) > this.dist2D(ringPip, wrist) * 1.12;
-    const pinkyExtended = this.dist2D(pinkyTip, wrist) > this.dist2D(pinkyPip, wrist) * 1.12;
-
+    const indexExtended = dist2D(indexTip, wrist) > dist2D(indexPip, wrist) * 1.14;
+    const middleExtended = dist2D(middleTip, wrist) > dist2D(middlePip, wrist) * 1.15;
+    const ringExtended = dist2D(ringTip, wrist) > dist2D(ringPip, wrist) * 1.12;
+    const pinkyExtended = dist2D(pinkyTip, wrist) > dist2D(pinkyPip, wrist) * 1.12;
     const fourFingersCurled = !indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
 
-    // Thumb extension check relative to index MCP and middle PIP
-    const thumbToIndexMcpRatio = this.dist2D(thumbTip, indexMcp) / palmReferenceScale;
-    const thumbToMiddlePipRatio = this.dist2D(thumbTip, middlePip) / palmReferenceScale;
+    const thumbToIndexMcp = dist2D(thumbTip, indexMcp) / palm;
+    const thumbToMiddlePip = dist2D(thumbTip, middlePip) / palm;
 
-    // 👍 Thumbs-Up Classifier:
-    // 4 fingers curled in, while Thumb tip is pointing upward and extended away from index MCP
     const isThumbsUp =
       fourFingersCurled &&
       thumbTip.y < thumbIp.y - 0.015 &&
       thumbTip.y < indexPip.y &&
-      thumbToIndexMcpRatio > 0.62;
-
-    // -------------------------------------------------------------------------
-    // GESTURE 3: 👍 THUMBS-UP -> Tháo xoắn / Tách đôi 2 mạch đơn (Unzipping DNA)
-    // -------------------------------------------------------------------------
-    if (isThumbsUp) {
-      this.prevWristPos = wrist;
-      return {
-        telemetry: {
-          handsDetected: handsCount,
-          primaryGesture: 'THUMBS_UP_UNZIP',
-          gestureConfidence: 0.95,
-          indexTipScreen: null,
-          thumbTipScreen: null,
-          pinchDistance: Number(thumbIndexSpanRatio.toFixed(2)),
-          zoomLevelNormalized: Number(this.currentZoomNormalized.toFixed(2)),
-          handRollDeg,
-          handPitchDeg,
-          handYawDeg,
-          inertiaSpeed: 0
-        },
-        targetWristEuler: null,
-        inertiaImpulse: null,
-        targetZoomFactor: null,
-        targetUnzipFactor: 0.9,
-        detectedCameraPreset: null
-      };
-    }
-
-    // -------------------------------------------------------------------------
-    // GESTURE 5: ✊ FIST / GRAB -> Kéo rê chuỗi DNA xoay tự do theo quán tính
-    // -------------------------------------------------------------------------
-    if (fourFingersCurled && !isThumbsUp) {
-      let impulse = { x: 0, y: 0 };
-      let speed = 0;
-      if (this.prevWristPos) {
-        const dx = wrist.x - this.prevWristPos.x;
-        const dy = wrist.y - this.prevWristPos.y;
-        impulse = {
-          x: dy * 3.8,
-          y: dx * 4.4
-        };
-        speed = Math.min(100, Math.round(Math.hypot(dx, dy) * 1800));
-      }
-      this.prevWristPos = wrist;
-
-      return {
-        telemetry: {
-          handsDetected: handsCount,
-          primaryGesture: 'FIST_INERTIA_GRAB',
-          gestureConfidence: 0.94,
-          indexTipScreen: null,
-          thumbTipScreen: null,
-          pinchDistance: Number(thumbIndexSpanRatio.toFixed(2)),
-          zoomLevelNormalized: Number(this.currentZoomNormalized.toFixed(2)),
-          handRollDeg,
-          handPitchDeg,
-          handYawDeg,
-          inertiaSpeed: speed
-        },
-        targetWristEuler: null,
-        inertiaImpulse: impulse,
-        targetZoomFactor: null,
-        targetUnzipFactor: null,
-        detectedCameraPreset: null
-      };
-    }
-
-    // -------------------------------------------------------------------------
-    // GESTURE 2: ✌️ PEACE SIGN -> Nhìn từ trên đỉnh xuống (Top-down view)
-    // -------------------------------------------------------------------------
-    if (indexExtended && middleExtended && !ringExtended && !pinkyExtended && thumbIndexSpanRatio > 0.45) {
-      this.prevWristPos = wrist;
-      return {
-        telemetry: {
-          handsDetected: handsCount,
-          primaryGesture: 'PEACE_TOP_VIEW',
-          gestureConfidence: 0.93,
-          indexTipScreen: null,
-          thumbTipScreen: null,
-          pinchDistance: Number(thumbIndexSpanRatio.toFixed(2)),
-          zoomLevelNormalized: Number(this.currentZoomNormalized.toFixed(2)),
-          handRollDeg,
-          handPitchDeg: 90,
-          handYawDeg,
-          inertiaSpeed: 0
-        },
-        targetWristEuler: { x: Math.PI / 2, y: this.smoothedWristEuler.y, z: 0 },
-        inertiaImpulse: null,
-        targetZoomFactor: null,
-        targetUnzipFactor: 0,
-        detectedCameraPreset: 'TOP_AXIS'
-      };
-    }
-
-    // -------------------------------------------------------------------------
-    // GESTURE 4: 👌 PINCH / SPREAD (Ngón Cái + Ngón Trỏ) -> Zoom Ra / Zoom Vào
-    // Purely driven by the span between Thumb Tip (#4) and Index Tip (#8),
-    // normalized by palm size so hand-to-camera distance has ZERO effect!
-    // Triggered when:
-    //  (A) Middle, Ring, Pinky are curled AND Thumb is extended out with Index (2-finger L/pinch caliper), OR
-    //  (B) Thumb & Index tips are brought into 👌 pinch/caliper posture while other fingers are relaxed.
-    // -------------------------------------------------------------------------
-    const isTwoFingerZoomCaliper =
-      !middleExtended &&
-      !ringExtended &&
-      !pinkyExtended &&
-      indexExtended &&
-      (thumbToMiddlePipRatio > 0.58 || thumbIndexSpanRatio < 0.65);
-
-    const isOkSignZoomPosture =
-      (middleExtended || ringExtended) && thumbIndexSpanRatio < 0.72;
-
-    if (isTwoFingerZoomCaliper || isOkSignZoomPosture) {
-      this.prevWristPos = wrist;
-
-      // Map normalized Thumb-Index span [0.18 .. 1.35] strictly to Zoom [0.55x .. 2.45x]
-      // Pinching Thumb + Index close together -> Zoom Out (0.55x)
-      // Spreading Thumb + Index apart -> Zoom In (2.45x)
-      const normalizedSpanClamped = Math.max(0.18, Math.min(1.35, thumbIndexSpanRatio));
-      const targetZoom =
-        0.55 + ((normalizedSpanClamped - 0.18) / (1.35 - 0.18)) * (2.45 - 0.55);
-
-      this.currentZoomNormalized =
-        this.currentZoomNormalized + (targetZoom - this.currentZoomNormalized) * 0.28;
-
-      return {
-        telemetry: {
-          handsDetected: handsCount,
-          primaryGesture: 'PINCH_ZOOM',
-          gestureConfidence: 0.95,
-          indexTipScreen: { x: indexTip.x, y: indexTip.y },
-          thumbTipScreen: { x: thumbTip.x, y: thumbTip.y },
-          pinchDistance: Number(thumbIndexSpanRatio.toFixed(2)),
-          zoomLevelNormalized: Number(this.currentZoomNormalized.toFixed(2)),
-          handRollDeg,
-          handPitchDeg,
-          handYawDeg,
-          inertiaSpeed: 0
-        },
-        targetWristEuler: null,
-        inertiaImpulse: null,
-        targetZoomFactor: this.currentZoomNormalized,
-        targetUnzipFactor: null,
-        detectedCameraPreset: null
-      };
-    }
-
-    // -------------------------------------------------------------------------
-    // GESTURE 6: 👉 POINT & INSPECT -> Chỉ 1 ngón trỏ (Ngón cái khép vào lòng bàn tay)
-    // -------------------------------------------------------------------------
-    if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
-      this.prevWristPos = wrist;
-      return {
-        telemetry: {
-          handsDetected: handsCount,
-          primaryGesture: 'POINT_INSPECT',
-          gestureConfidence: 0.94,
-          indexTipScreen: { x: indexTip.x, y: indexTip.y },
-          thumbTipScreen: null,
-          pinchDistance: Number(thumbIndexSpanRatio.toFixed(2)),
-          zoomLevelNormalized: Number(this.currentZoomNormalized.toFixed(2)),
-          handRollDeg,
-          handPitchDeg,
-          handYawDeg,
-          inertiaSpeed: 0
-        },
-        targetWristEuler: null,
-        inertiaImpulse: null,
-        targetZoomFactor: null,
-        targetUnzipFactor: null,
-        detectedCameraPreset: null
-      };
-    }
-
-    // -------------------------------------------------------------------------
-    // GESTURE 1: ✋ XÒE BÀN TAY (PALM 3D ORIENTATION - Đồng bộ góc nghiêng 1:1)
-    // Nghiêng cổ tay (Roll Z), Úp/ngửa bàn tay (Pitch X), Xoay lòng bàn tay 360° (Yaw Y)
-    // -------------------------------------------------------------------------
-    this.prevWristPos = wrist;
+      thumbToIndexMcp > 0.62;
 
     return {
-      telemetry: {
-        handsDetected: handsCount,
-        primaryGesture: 'PALM_3D_ORIENTATION',
-        gestureConfidence: 0.96,
-        indexTipScreen: null,
-        thumbTipScreen: null,
-        pinchDistance: Number(thumbIndexSpanRatio.toFixed(2)),
-        zoomLevelNormalized: Number(this.currentZoomNormalized.toFixed(2)),
-        handRollDeg,
-        handPitchDeg,
-        handYawDeg,
-        inertiaSpeed: 0
-      },
-      targetWristEuler: { ...this.smoothedWristEuler },
-      inertiaImpulse: null,
-      targetZoomFactor: null,
-      targetUnzipFactor: 0,
-      detectedCameraPreset: null
+      wrist,
+      thumbTip,
+      indexTip,
+      span,
+      indexExtended,
+      middleExtended,
+      ringExtended,
+      pinkyExtended,
+      fourFingersCurled,
+      isThumbsUp,
+      thumbAwayFromPalm: thumbToMiddlePip > 0.58
     };
   }
 
-  private dist2D(a: { x: number; y: number }, b: { x: number; y: number }): number {
-    return Math.hypot(a.x - b.x, a.y - b.y);
+  /**
+   * Góc nghiêng chỉ lấy từ HƯỚNG của lòng bàn tay (không lấy vị trí tay trên màn hình):
+   *  - up     = cổ tay → gốc ngón giữa
+   *  - across = gốc ngón trỏ → gốc ngón út (đổi dấu liên tục nên dùng được cho cả tay trái và tay phải)
+   */
+  private computePalmAngles(p: (i: number) => Vec3, sensitivity: number, tMs: number) {
+    // Hệ toạ độ thuận: X sang phải, Y lên trên, Z hướng về phía camera
+    const toWorld = (v: Vec3): Vec3 => ({ x: v.x, y: -v.y, z: -v.z });
+    const wrist = toWorld(p(0));
+    const indexMcp = toWorld(p(5));
+    const middleMcp = toWorld(p(9));
+    const pinkyMcp = toWorld(p(17));
+
+    const up = norm(sub(middleMcp, wrist));
+    let across = sub(pinkyMcp, indexMcp);
+    across = norm(sub(across, scale(up, dot(across, up)))); // trực giao hoá với up
+
+    // Tay trái và tay phải có "across" ngược chiều → chọn chiều gần nhất với khung trước,
+    // lần đầu thì quy về hướng +X. Nhờ vậy góc không bị nhảy 180°.
+    const ref = this.prevAcross ?? { x: 1, y: 0, z: 0 };
+    if (dot(across, ref) < 0) across = scale(across, -1);
+    this.prevAcross = across;
+
+    const rawRoll = -Math.atan2(up.x, up.y); // nghiêng cổ tay trái/phải
+    const rawPitch = Math.atan2(up.z, Math.hypot(up.x, up.y)); // úp/ngửa về phía camera
+    const rawYaw = Math.atan2(-across.z, across.x); // xoay lòng bàn tay quanh trục dọc
+
+    return {
+      roll: this.filters.roll.filter(rawRoll * sensitivity, tMs),
+      pitch: this.filters.pitch.filter(rawPitch * sensitivity, tMs),
+      yaw: this.filters.yaw.filter(rawYaw * sensitivity, tMs)
+    };
+  }
+
+  private classify(f: HandFeatures): ActiveGestureType {
+    if (f.isThumbsUp || f.fourFingersCurled) {
+      this.zoomEngaged = false;
+      return f.isThumbsUp ? 'THUMBS_UP_UNZIP' : 'FIST_INERTIA_GRAB';
+    }
+
+    // 👌 Zoom: phải CHỤM đầu ngón cái + ngón trỏ trước thì mới vào chế độ zoom
+    if (this.zoomEngaged) {
+      const stillPinchPosture = f.indexExtended || f.span < PINCH_ENGAGE_SPAN * 1.5;
+      if (stillPinchPosture && f.span < 1.8 && !(f.middleExtended && f.ringExtended && f.pinkyExtended && f.span > 1.2)) {
+        return 'PINCH_ZOOM';
+      }
+      this.zoomEngaged = false;
+    }
+    if (f.span < PINCH_ENGAGE_SPAN) {
+      this.zoomEngaged = true;
+      this.zoomEngageSpan = f.span;
+      this.zoomAtEngage = this.currentZoomNormalized;
+      return 'PINCH_ZOOM';
+    }
+
+    if (f.indexExtended && f.middleExtended && !f.ringExtended && !f.pinkyExtended && f.span > 0.45) {
+      return 'PEACE_TOP_VIEW';
+    }
+    if (f.indexExtended && !f.middleExtended && !f.ringExtended && !f.pinkyExtended && !f.thumbAwayFromPalm) {
+      return 'POINT_INSPECT';
+    }
+    return 'PALM_3D_ORIENTATION';
+  }
+
+  private onGestureChange(_from: ActiveGestureType, to: ActiveGestureType, f: HandFeatures) {
+    if (to === 'FIST_INERTIA_GRAB') {
+      // Bắt đầu nắm tay: lấy vị trí hiện tại làm mốc, tránh "giật" do vị trí của cử chỉ trước
+      this.prevWristPos = f.wrist;
+    }
+    if (to === 'PINCH_ZOOM' && !this.zoomEngaged) {
+      this.zoomEngaged = true;
+      this.zoomEngageSpan = f.span;
+      this.zoomAtEngage = this.currentZoomNormalized;
+    }
+  }
+
+  private buildOutput(
+    gesture: ActiveGestureType,
+    handsDetected: number,
+    f: HandFeatures | null,
+    angles: { pitch: number; yaw: number; roll: number },
+    tMs = 0
+  ): HandGestureComputeOutput {
+    const toDeg = (r: number) => Math.round((r * 180) / Math.PI);
+    const telemetry: HandTelemetryState = {
+      handsDetected,
+      primaryGesture: gesture,
+      gestureConfidence: gesture === 'IDLE' ? 0 : 0.95,
+      indexTipScreen: null,
+      thumbTipScreen: null,
+      pinchDistance: f ? Number(f.span.toFixed(2)) : 0,
+      zoomLevelNormalized: Number(this.currentZoomNormalized.toFixed(2)),
+      handRollDeg: toDeg(angles.roll),
+      handPitchDeg: toDeg(angles.pitch),
+      handYawDeg: toDeg(angles.yaw),
+      inertiaSpeed: 0
+    };
+    const out: HandGestureComputeOutput = {
+      telemetry,
+      targetWristEuler: null,
+      inertiaImpulse: null,
+      targetZoomFactor: null,
+      targetUnzipFactor: null,
+      detectedCameraPreset: null
+    };
+
+    if (!f || gesture === 'IDLE') return out;
+
+    // Theo dõi vị trí cổ tay cho quán tính (luôn cập nhật để không bị giật khi chuyển cử chỉ)
+    const prev = this.prevWristPos;
+    const dtSec = prev ? Math.max(1 / 120, (tMs - this.prevTimeMs) / 1000) : 0;
+    this.prevWristPos = f.wrist;
+    this.prevTimeMs = tMs;
+
+    switch (gesture) {
+      case 'THUMBS_UP_UNZIP':
+        out.targetUnzipFactor = 0.9;
+        break;
+
+      case 'FIST_INERTIA_GRAB': {
+        if (prev && dtSec > 0) {
+          // Vận tốc theo giây → không phụ thuộc tốc độ khung hình (quy đổi về mức 30 khung/giây của bản cũ)
+          const vx = (f.wrist.x - prev.x) / dtSec;
+          const vy = (f.wrist.y - prev.y) / dtSec;
+          out.inertiaImpulse = { x: (vy * 3.8) / 30, y: (vx * 4.4) / 30 };
+          telemetry.inertiaSpeed = Math.min(100, Math.round(Math.hypot(vx, vy) * 60));
+        } else {
+          out.inertiaImpulse = { x: 0, y: 0 };
+        }
+        break;
+      }
+
+      case 'PEACE_TOP_VIEW':
+        telemetry.handPitchDeg = 90;
+        out.targetWristEuler = { x: Math.PI / 2, y: angles.yaw, z: 0 };
+        out.targetUnzipFactor = 0;
+        out.detectedCameraPreset = 'TOP_AXIS';
+        break;
+
+      case 'PINCH_ZOOM': {
+        // Zoom tương đối kể từ lúc chụm: mở ngón ra → phóng to, khép lại → thu nhỏ
+        const target = Math.min(
+          ZOOM_MAX,
+          Math.max(ZOOM_MIN, this.zoomAtEngage + (f.span - this.zoomEngageSpan) * ZOOM_PER_SPAN)
+        );
+        this.currentZoomNormalized += (target - this.currentZoomNormalized) * 0.28;
+        telemetry.zoomLevelNormalized = Number(this.currentZoomNormalized.toFixed(2));
+        telemetry.indexTipScreen = { x: f.indexTip.x, y: f.indexTip.y };
+        telemetry.thumbTipScreen = { x: f.thumbTip.x, y: f.thumbTip.y };
+        out.targetZoomFactor = this.currentZoomNormalized;
+        break;
+      }
+
+      case 'POINT_INSPECT':
+        telemetry.indexTipScreen = { x: f.indexTip.x, y: f.indexTip.y };
+        break;
+
+      case 'PALM_3D_ORIENTATION':
+        out.targetWristEuler = { x: angles.pitch, y: angles.yaw, z: angles.roll };
+        out.targetUnzipFactor = 0;
+        break;
+    }
+
+    return out;
   }
 }
 
@@ -358,7 +406,7 @@ export const GESTURE_LABELS_VI: Record<
     icon: '✋',
     title: '✋ Xòe Bàn Tay — Đồng Bộ Góc Nghiêng 3D (Roll · Pitch · Yaw)',
     subtitle:
-      'Nghiêng cổ tay (Trục Z) · Úp/ngửa bàn tay (Trục X) · Xoay lòng bàn tay 360° (Trục Y) như cầm mô hình thật',
+      'Nghiêng cổ tay (Trục Z) · Úp/ngửa bàn tay (Trục X) · Xoay lòng bàn tay (Trục Y) như cầm mô hình thật',
     badgeColor: 'text-cyan-400'
   },
   PEACE_TOP_VIEW: {
@@ -382,7 +430,7 @@ export const GESTURE_LABELS_VI: Record<
     icon: '👌',
     title: '👌 Ngón Cái + Ngón Trỏ — Mở Rộng Để Phóng To / Chụm Lại Để Thu Nhỏ',
     subtitle:
-      'Chỉ tính khoảng cách giữa đầu Ngón Cái và Ngón Trỏ (bỏ hoàn toàn phụ thuộc khoảng cách bàn tay tới camera)',
+      'Chụm đầu ngón cái + ngón trỏ để bắt đầu, sau đó mở/khép để zoom (không phụ thuộc khoảng cách bàn tay tới camera)',
     badgeColor: 'text-amber-400'
   },
   FIST_INERTIA_GRAB: {

@@ -226,12 +226,12 @@ export const HIGH_SCHOOL_GESTURE_IDEAS: BioInteractionIdea[] = [
   {
     id: 'gesture-palm-3d',
     title: '✋ 1. Xòe Bàn Tay (Palm 3D Orientation — Đồng Bộ Góc Nghiêng)',
-    subtitle: 'Nghiêng cổ tay (Roll Z), Úp/ngửa bàn tay (Pitch X), Xoay lòng bàn tay 360° (Yaw Y)',
+    subtitle: 'Nghiêng cổ tay (Roll Z), Úp/ngửa bàn tay (Pitch X), Xoay lòng bàn tay (Yaw Y)',
     gestureIcon: '✋',
     gestureTrigger: 'Xòe mở bàn tay trước Camera',
     highSchoolTopic: 'Cảm giác cầm trực tiếp chuỗi DNA / Nucleotide trên tay',
     scientificApplication:
-      'Đồng bộ 1:1 ma trận góc nghiêng 3 chiều của lòng bàn tay với trục mô hình: Nghiêng cổ tay trái/phải nghiêng trục Z, úp/ngửa bàn tay chúc/ngửa trục X, xoay lòng bàn tay xoay tròn 360° trục Y.',
+      'Đồng bộ 1:1 ma trận góc nghiêng 3 chiều của lòng bàn tay với trục mô hình: Nghiêng cổ tay trái/phải nghiêng trục Z, úp/ngửa bàn tay chúc/ngửa trục X, xoay lòng bàn tay xoay quanh trục Y.',
     presetId: 'WC_1_TURN',
     targetTab: 'WATSON_CRICK_DNA',
     demoAction: 'PALM_ORIENTATION'
@@ -239,9 +239,9 @@ export const HIGH_SCHOOL_GESTURE_IDEAS: BioInteractionIdea[] = [
   {
     id: 'gesture-pinch-zoom',
     title: '👌 2. Ngón Cái + Ngón Trỏ (Zoom Ra / Zoom Vào Độc Lập Khoảng Cách Bàn Tay)',
-    subtitle: 'Mở rộng Ngón Cái & Ngón Trỏ để Phóng To — Chụm sát 2 ngón để Thu Nhỏ',
+    subtitle: 'Chụm đầu ngón cái và ngón trỏ để bắt đầu, rồi mở ra để phóng to, khép lại để thu nhỏ',
     gestureIcon: '👌',
-    gestureTrigger: 'Dùng Ngón Cái + Ngón Trỏ mở ra / khép lại (không phụ thuộc cự ly bàn tay)',
+    gestureTrigger: 'Chụm ngón cái chạm ngón trỏ, giữ chụm rồi mở ra / khép lại (không phụ thuộc cự ly bàn tay)',
     highSchoolTopic: 'Phóng to vào sát liên kết hydrogen & vòng phân tử Đường - phosphate',
     scientificApplication:
       'Hệ thống chuẩn hóa tỷ lệ khoảng cách giữa đầu Ngón Cái (#4) và đầu Ngón Trỏ (#8) theo kích thước lòng bàn tay, giúp bạn Zoom ra/vào mượt mà mà không bị nhảy hình khi đưa tay gần hay xa camera.',

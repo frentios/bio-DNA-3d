@@ -166,7 +166,15 @@ export function App() {
 
   const handleGestureFrame = useCallback((output: HandGestureComputeOutput) => {
     setTelemetry(output.telemetry);
-    setCameraWristEuler(output.targetWristEuler);
+    // Giữ nguyên góc xoay cuối cùng khi chuyển sang cử chỉ khác (chỉ ✋ và ✌️ mới đặt góc mới)
+    if (output.targetWristEuler !== null) {
+      setCameraWristEuler(output.targetWristEuler);
+      setUseVirtualWrist(false);
+    } else if (output.telemetry.primaryGesture === 'FIST_INERTIA_GRAB') {
+      // ✊ Nắm tay: thả cho mô hình quay tự do theo quán tính, không kéo về góc cũ
+      setCameraWristEuler(null);
+      setUseVirtualWrist(false);
+    }
     setInertiaImpulse(output.inertiaImpulse);
     if (output.targetZoomFactor !== null) {
       setHandZoomFactor(output.targetZoomFactor);
@@ -187,6 +195,7 @@ export function App() {
       setFocusedStepIndex(null);
       setHandZoomFactor(1.0);
       setUseVirtualWrist(true);
+      setCameraWristEuler(null);
       setAutoRotate(false);
       setVirtualWristDeg({ pitch: 24, yaw: 45, roll: -18 });
       setTelemetry((prev) => ({
@@ -200,6 +209,7 @@ export function App() {
       setExplosionFactor(0);
       setFocusedStepIndex(null);
       setUseVirtualWrist(true);
+      setCameraWristEuler(null);
       setAutoRotate(false);
       setVirtualWristDeg({ pitch: 90, yaw: 0, roll: 0 });
       setCameraOrientation('TOP_AXIS');
@@ -283,6 +293,7 @@ export function App() {
       setHandZoomFactor(1.0);
       setCameraOrientation('FRONT_HELIX');
       setUseVirtualWrist(true);
+      setCameraWristEuler(null);
       setVirtualWristDeg({ pitch: 0, yaw: 0, roll: 0 });
       setFocusedStepIndex(null);
       setHoveredInfo(null);
@@ -657,6 +668,7 @@ export function App() {
             virtualWristDeg={virtualWristDeg}
             onVirtualWristChange={(deg) => {
               setUseVirtualWrist(true);
+      setCameraWristEuler(null);
               setAutoRotate(false);
               setVirtualWristDeg(deg);
             }}
@@ -748,6 +760,7 @@ export function App() {
                       onClick={() => {
                         setAutoRotate(false);
                         setUseVirtualWrist(true);
+      setCameraWristEuler(null);
                         setVirtualWristDeg(view.wrist);
                         setCameraOrientation(view.id as HandCameraOrientation);
                       }}
@@ -805,6 +818,7 @@ export function App() {
                 }}
                 onManualRotationChange={(deg) => {
                   setUseVirtualWrist(false);
+                  setCameraWristEuler(null);
                   setVirtualWristDeg(deg);
                 }}
               />

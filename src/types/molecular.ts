@@ -122,7 +122,7 @@ export interface HandTelemetryState {
   zoomLevelNormalized: number; // 0.5x to 2.5x
   handRollDeg: number; // Nghiêng cổ tay trái/phải (Trục Z)
   handPitchDeg: number; // Úp/ngửa bàn tay (Trục X)
-  handYawDeg: number; // Xoay lòng bàn tay 360° (Trục Y)
+  handYawDeg: number; // Xoay lòng bàn tay (Trục Y)
   inertiaSpeed: number; // Tốc độ quán tính khi nắm tay kéo rê
 }
 
