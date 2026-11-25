@@ -1,0 +1,14 @@
+{
+  "name": "BioMotion 3D — Mô hình DNA 3D",
+  "short_name": "BioMotion 3D",
+  "description": "Mô hình DNA 3D điều khiển bằng cử chỉ tay cho Sinh học 10.",
+  "lang": "vi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#05070f",
+  "theme_color": "#05070f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

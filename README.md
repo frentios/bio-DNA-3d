@@ -14,7 +14,7 @@ Học sinh có thể **xoay, phóng to, tách mạch và tra cứu** từng nucl
 
 Ứng dụng tự tính các đại lượng của đoạn DNA: tổng số nucleotide **N**, chiều dài **L = N/2 × 3,4 Å**, số liên kết hydrogen **H = 2A + 3G**, số chu kỳ xoắn **C = N/20**, khối lượng **M = N × 300 amu**. Bạn có thể tự nhập trình tự mạch 1, hoặc bấm vào từng cặp nucleotide để tạo đột biến thay thế.
 
-## Sáu cử chỉ bàn tay
+## Cử chỉ bàn tay
 
 | Cử chỉ | Tác dụng |
 |---|---|
@@ -24,6 +24,8 @@ Học sinh có thể **xoay, phóng to, tách mạch và tra cứu** từng nucl
 | 👍 Giơ ngón cái | Tháo xoắn, tách 2 mạch đơn; ở mô hình nucleotide thì tách rời 3 thành phần |
 | ✊ Nắm tay và kéo | Xoay tự do theo quán tính |
 | 👉 Chỉ ngón trỏ | Trỏ vào một chi tiết để xem công thức và số liên kết hydrogen |
+| 🙌 Hai tay xoè, kéo xa / lại gần | Phóng to / thu nhỏ |
+| ✊✊ Hai tay nắm (mỗi tay cầm một mạch), kéo ra hai bên | Tách 2 mạch DNA; đưa lại gần để ghép lại |
 
 Nhận dạng cử chỉ dùng [MediaPipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker) và chạy hoàn toàn trên trình duyệt, không gửi hình ảnh đi đâu. Thuật toán:
 - chỉ chấp nhận cử chỉ khi tay giữ ổn định vài khung hình, để tránh nhấp nháy;
@@ -31,6 +33,33 @@ Nhận dạng cử chỉ dùng [MediaPipe Hand Landmarker](https://ai.google.dev
 - dùng được cho cả tay trái lẫn tay phải.
 
 Nếu không có camera, có thể dùng **chuột** (kéo để xoay, cuộn để phóng to, bấm vào chi tiết để chọn), các **thanh trượt** và các **nút mô phỏng cử chỉ**.
+
+## Chế độ trình chiếu cho giáo viên
+
+Bấm **Trình chiếu** trên thanh đầu trang. Mô hình chiếm gần hết màn hình, bên dưới là thanh giáo án 10 bước theo Bài 5 (phần nucleic acid). Mỗi bước tự chuyển mô hình, góc nhìn, mức tách mạch và lớp hiển thị phù hợp, kèm ý chính chữ lớn và câu hỏi gợi mở.
+
+| Phím | Tác dụng |
+|---|---|
+| `→`, `Space`, `PageDown` | Bước tiếp theo (dùng được với bút trình chiếu) |
+| `←`, `PageUp` | Bước trước |
+| `Q` | Hiện / ẩn câu hỏi cho học sinh |
+| `Esc` | Thoát |
+
+Camera cử chỉ vẫn hoạt động khi trình chiếu. Giáo án nằm trong `src/services/lessonPlan.ts`, có thể sửa hoặc thêm bước.
+
+## Giao diện JARVIS
+
+Giao diện lấy cảm hứng từ HUD của JARVIS trong phim *Iron Man*:
+- khung kính góc vát, vòng arc reactor xoay quanh mô hình;
+- dòng trạng thái thời gian thực;
+- màn hình khởi động ngắn;
+- nút **Hologram** chuyển mô hình 3D sang dạng hình chiếu bán trong suốt.
+
+## Dùng khi không có mạng
+
+Trang là một PWA: sau lần mở đầu tiên có mạng, toàn bộ ứng dụng và mô hình nhận dạng tay được lưu vào trình duyệt, nên các lần sau vẫn chạy được khi mất mạng. Trên Chrome / Edge có thể bấm **Cài đặt ứng dụng** trên thanh địa chỉ để dùng như một ứng dụng riêng.
+
+MediaPipe (khoảng 11 MB) chỉ được tải khi bấm **Bật camera**, nên trang mở nhanh hơn.
 
 ## Chạy trên máy
 
@@ -61,15 +90,20 @@ src/
 ├── App.tsx                          # Bố cục và trạng thái chính
 ├── index.css                        # Hệ thống thiết kế (Tailwind v4)
 ├── components/
-│   ├── MolecularViewport3D.tsx      # Cảnh 3D (three.js) cho 4 mô hình
+│   ├── MolecularViewport3D.tsx      # Khung 3D: camera, ánh sáng, tương tác, hiệu ứng
+│   ├── scene/                       # Hàm dựng cảnh cho từng mô hình (mỗi mô hình 1 file)
+│   ├── jarvis/                      # HUD JARVIS, màn khởi động, thanh trình chiếu
 │   ├── FloatingAtomOverlay.tsx      # Lớp thông tin phủ trên khung 3D
 │   ├── HandTrackerOverlay.tsx       # Camera, MediaPipe, nút mô phỏng
 │   └── ProposalAdvisorModal.tsx     # Hướng dẫn 6 cử chỉ và bảng công thức
 ├── services/
 │   ├── handGestureEngine.ts         # Thuật toán nhận dạng cử chỉ
+│   ├── lessonPlan.ts                # Giáo án cho chế độ trình chiếu
 │   └── pdbService.ts                # Dữ liệu sinh học, trình tự mẫu, công thức
 └── types/molecular.ts
 tests/gestureEngine.test.ts          # Kiểm thử cử chỉ
+scripts/prepare-mediapipe.mjs        # Chép WASM và tải mô hình nhận dạng tay để dùng offline
+public/sw.js, manifest.webmanifest   # PWA
 ```
 
 **Công nghệ:** React 19, TypeScript, Vite, Tailwind CSS v4, three.js, MediaPipe Tasks Vision, Motion, lucide-react.

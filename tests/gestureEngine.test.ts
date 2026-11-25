@@ -4,7 +4,6 @@ type P={x:number;y:number;z:number};
 function hand(ext:boolean[], o:{dx?:number;dy?:number;roll?:number;mirror?:boolean;pinch?:number}={}):P[]{
   const pts:P[]=new Array(21);
   const s=o.mirror?-1:1;
-  const W={x:0,y:0.2};
   pts[0]={x:0,y:0.2,z:0};
   // thumb
   const thumbExt=ext[0];
@@ -54,5 +53,17 @@ let ok=0,fail=0; const check=(name:string,c:boolean,info:any='')=>{c?ok++:fail++
 {const imp=(fps:number)=>{const e=new HandGestureEngine(); let tt=0; const dt=1000/fps; let o:any;
   for(let i=0;i<8;i++){tt+=dt;o=e.processHands([hand(FIST)],1.65,tt);} for(let i=0;i<3;i++){tt+=dt;o=e.processHands([hand(FIST,{dx:0.3*(i+1)/fps})],1.65,tt);} return o.inertiaImpulse.y;};
  const a=imp(30),b=imp(60); check('quán tính 30fps ≈ 60fps',Math.abs(a-b)/Math.abs(a)<0.05,{a,b});}
+// 9. Hai tay xoè kéo xa nhau → phóng to
+{const e=new HandGestureEngine(); const two=(gap:number,ext:boolean[])=>[hand(ext,{dx:-gap}),hand(ext,{dx:gap,mirror:true})];
+ let o:any; for(let i=0;i<8;i++){t+=33;o=e.processHands(two(0.12,OPEN),1.65,t);} const z0=o.telemetry.zoomLevelNormalized;
+ for(let k=1;k<=12;k++){t+=33;o=e.processHands(two(0.12+k*0.01,OPEN),1.65,t);}
+ check('hai tay xoè kéo xa → phóng to',o.telemetry.primaryGesture==='TWO_HAND_ZOOM'&&o.telemetry.zoomLevelNormalized>z0+0.4,[o.telemetry.primaryGesture,z0,o.telemetry.zoomLevelNormalized]);
+// 10. Hai nắm tay kéo ra hai bên → tách mạch
+ const e2=new HandGestureEngine(); for(let i=0;i<8;i++){t+=33;o=e2.processHands(two(0.1,FIST),1.65,t);}
+ const u0=o.targetUnzipFactor??0; for(let k=1;k<=12;k++){t+=33;o=e2.processHands(two(0.1+k*0.015,FIST),1.65,t);}
+ check('hai nắm tay kéo ra → tách mạch',o.telemetry.primaryGesture==='TWO_HAND_UNZIP'&&o.targetUnzipFactor>u0+0.5,[o.telemetry.primaryGesture,u0,o.targetUnzipFactor]);
+// 11. Hai tay khác tư thế → dùng tay thứ nhất
+ const e3=new HandGestureEngine(); for(let i=0;i<8;i++){t+=33;o=e3.processHands([hand(POINT),hand(FIST,{dx:0.3})],1.65,t);}
+ check('hai tay khác tư thế → cử chỉ 1 tay',o.telemetry.primaryGesture==='POINT_INSPECT',o.telemetry.primaryGesture);}
 console.log(`\n${ok} đạt, ${fail} lỗi`);
 process.exitCode = fail > 0 ? 1 : 0;

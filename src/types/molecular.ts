@@ -110,7 +110,9 @@ export type ActiveGestureType =
   | 'THUMBS_UP_UNZIP' // 👍 Giơ ngón tay cái: Tháo xoắn / Tách đôi 2 mạch đơn (hoặc tách 3 phần Nucleotide)
   | 'PINCH_ZOOM' // 👌 Khoảng cách Ngón cái + Ngón trỏ: Zoom ra / Zoom vào (không phụ thuộc khoảng cách bàn tay)
   | 'FIST_INERTIA_GRAB' // ✊ Nắm bàn tay lại: Kéo rê xoay tự do theo quán tính
-  | 'POINT_INSPECT'; // 👉 Chỉ 1 ngón trỏ: Hiển thị thẻ thông số A,T,G,C,U & công thức hóa học
+  | 'POINT_INSPECT' // 👉 Chỉ 1 ngón trỏ: Hiển thị thẻ thông số A,T,G,C,U & công thức hóa học
+  | 'TWO_HAND_ZOOM' // 🙌 Hai tay xoè: kéo xa / lại gần để phóng to / thu nhỏ
+  | 'TWO_HAND_UNZIP'; // ✊✊ Hai tay nắm (mỗi tay cầm 1 mạch): kéo ra hai bên để tách mạch
 
 export interface HandTelemetryState {
   handsDetected: number;

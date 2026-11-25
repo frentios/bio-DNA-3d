@@ -27,14 +27,6 @@ interface FloatingAtomOverlayProps {
   onToggleFullScreen: () => void;
 }
 
-const GESTURE_HINTS: { icon: string; text: string }[] = [
-  { icon: '✋', text: 'Xoay 3D' },
-  { icon: '👌', text: 'Phóng to' },
-  { icon: '✌️', text: 'Nhìn đỉnh' },
-  { icon: '👍', text: 'Tách mạch' },
-  { icon: '✊', text: 'Quán tính' },
-  { icon: '👉', text: 'Tra cứu' }
-];
 
 export const FloatingAtomOverlay: React.FC<FloatingAtomOverlayProps> = ({
   activeTab,
@@ -308,18 +300,6 @@ export const FloatingAtomOverlay: React.FC<FloatingAtomOverlayProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Chú giải cử chỉ phía dưới */}
-      <div className="hidden md:flex absolute bottom-3 left-1/2 -translate-x-1/2 items-center gap-1 bg-ink-950/70 backdrop-blur-md border border-white/10 rounded-full px-2 py-1">
-        {GESTURE_HINTS.map((h) => (
-          <span
-            key={h.text}
-            className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] text-slate-300 whitespace-nowrap"
-          >
-            <span>{h.icon}</span>
-            {h.text}
-          </span>
-        ))}
-      </div>
     </div>
   );
 };

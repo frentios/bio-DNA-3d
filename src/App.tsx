@@ -22,10 +22,16 @@ import { MolecularViewport3D } from './components/MolecularViewport3D';
 import { FloatingAtomOverlay } from './components/FloatingAtomOverlay';
 import { HandTrackerOverlay, SimulatedGestureAction } from './components/HandTrackerOverlay';
 import { ProposalAdvisorSection } from './components/ProposalAdvisorModal';
+import { JarvisHud } from './components/jarvis/JarvisHud';
+import { BootSequence } from './components/jarvis/BootSequence';
+import { PresenterBar } from './components/jarvis/PresenterBar';
+import { NUCLEIC_ACID_LESSON } from './services/lessonPlan';
 import {
   Dna,
   RotateCcw,
   ScanLine,
+  Presentation,
+  Orbit,
   ZoomIn,
   Sparkles,
   SplitSquareHorizontal,
@@ -46,6 +52,11 @@ export function App() {
   const [activeTab, setActiveTab] = useState<ModelTabId>('WATSON_CRICK_DNA');
   const [selectedNucleotideBase, setSelectedNucleotideBase] = useState<NucleotideCode>('A');
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+  // Chế độ trình chiếu cho giáo viên + hologram JARVIS
+  const [presenterMode, setPresenterMode] = useState<boolean>(false);
+  const [lessonIndex, setLessonIndex] = useState<number>(0);
+  const [showQuestion, setShowQuestion] = useState<boolean>(false);
+  const [hologram, setHologram] = useState<boolean>(false);
 
   // 2. Sequence & Preset State
   const [activePresetId, setActivePresetId] = useState<string>('WC_1_TURN');
@@ -112,6 +123,76 @@ export function App() {
   const toggleFullScreen = useCallback(() => {
     setIsFullScreen((prev) => !prev);
   }, []);
+
+  /** Đưa mô hình về đúng trạng thái của một bước giáo án */
+  const applyLessonStep = useCallback((i: number) => {
+    const step = NUCLEIC_ACID_LESSON[i];
+    if (!step) return;
+    setLessonIndex(i);
+    setShowQuestion(false);
+    setActiveTab(step.tab);
+    if (step.presetId) {
+      const preset = HIGH_SCHOOL_PRESETS.find((p) => p.id === step.presetId);
+      if (preset) {
+        setActivePresetId(preset.id);
+        setSequenceStrand1(preset.sequenceStrand1);
+        setMutatedStepIndex(preset.id === 'WC_POINT_MUTATION' ? 5 : null);
+      }
+    }
+    if (step.base) setSelectedNucleotideBase(step.base);
+    setExplosionFactor(step.explosion);
+    setHandZoomFactor(step.zoom);
+    setCameraOrientation(step.orientation);
+    setCameraWristEuler(null);
+    setUseVirtualWrist(true);
+    setVirtualWristDeg(step.view);
+    setAutoRotate(!!step.autoRotate);
+    setFocusedStepIndex(null);
+    setHoveredInfo(null);
+    setSelectedSubunit(null);
+    if (step.layers) setLayerVisibility((prev) => ({ ...prev, ...step.layers }));
+  }, []);
+
+  // Khoá cuộn trang phía sau khi trình chiếu
+  useEffect(() => {
+    document.body.style.overflow = presenterMode ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [presenterMode]);
+
+  const startPresenter = useCallback(() => {
+    setIsFullScreen(false);
+    setPresenterMode(true);
+    applyLessonStep(0);
+  }, [applyLessonStep]);
+
+  const exitPresenter = useCallback(() => {
+    setPresenterMode(false);
+    setAutoRotate(false);
+  }, []);
+
+  // Phím tắt khi trình chiếu: ← → Space PageUp/PageDown (bút trình chiếu), Q, Esc
+  useEffect(() => {
+    if (!presenterMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      const last = NUCLEIC_ACID_LESSON.length - 1;
+      if (['ArrowRight', 'PageDown', ' '].includes(e.key)) {
+        e.preventDefault();
+        applyLessonStep(Math.min(last, lessonIndex + 1));
+      } else if (['ArrowLeft', 'PageUp'].includes(e.key)) {
+        e.preventDefault();
+        applyLessonStep(Math.max(0, lessonIndex - 1));
+      } else if (e.key === 'q' || e.key === 'Q') {
+        setShowQuestion((v) => !v);
+      } else if (e.key === 'Escape') {
+        exitPresenter();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [presenterMode, lessonIndex, applyLessonStep, exitPresenter]);
 
   const { steps, stats } = useMemo(
     () => buildHighSchoolDNAModel(sequenceStrand1, mutatedStepIndex),
@@ -471,7 +552,23 @@ export function App() {
   ];
 
   return (
-    <div className="min-h-screen text-slate-100 flex flex-col">
+    <div
+      className="min-h-screen text-slate-100 flex flex-col"
+      style={{ '--presenter-bar-h': '230px' } as React.CSSProperties}
+    >
+      <BootSequence />
+      {presenterMode && (
+        <PresenterBar
+          steps={NUCLEIC_ACID_LESSON}
+          index={lessonIndex}
+          onPrev={() => applyLessonStep(Math.max(0, lessonIndex - 1))}
+          onNext={() => applyLessonStep(Math.min(NUCLEIC_ACID_LESSON.length - 1, lessonIndex + 1))}
+          onJump={applyLessonStep}
+          onExit={exitPresenter}
+          showQuestion={showQuestion}
+          onToggleQuestion={() => setShowQuestion((v) => !v)}
+        />
+      )}
       <div className="app-backdrop" aria-hidden>
         <div className="orb w-[420px] h-[420px] bg-cyan-500 -top-32 -left-24" />
         <div
@@ -485,21 +582,21 @@ export function App() {
       </div>
 
       {/* ============================== HEADER ============================== */}
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-ink-950/70 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-[#00e5ff]/20 bg-[#02060d]/80 backdrop-blur-xl shadow-[0_1px_0_0_rgba(0,229,255,0.15),0_8px_30px_-12px_rgba(0,229,255,0.35)]">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-6 px-4 sm:px-6 py-3">
           <a href="#workbench" className="flex items-center gap-3 shrink-0 group">
-            <span className="relative grid place-items-center w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 via-violet-500 to-emerald-400 shadow-lg shadow-cyan-500/30">
-              <Dna className="w-5 h-5 text-white transition-transform duration-700 group-hover:rotate-180" />
+            <span className="relative grid place-items-center w-10 h-10 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/70 shadow-[0_0_18px_-2px_#00e5ff] [clip-path:polygon(8px_0,100%_0,100%_calc(100%-8px),calc(100%-8px)_100%,0_100%,0_8px)]">
+              <Dna className="w-5 h-5 text-[#7df9ff] transition-transform duration-700 group-hover:rotate-180" />
             </span>
             <span className="leading-tight">
-              <span className="block text-base font-extrabold tracking-tight text-white">
+              <span className="block text-base font-bold tracking-[0.08em] uppercase text-white hud-title">
                 BioMotion <span className="text-gradient">3D</span>
               </span>
               <span className="block text-[11px] text-slate-400">Sinh học 10 · Kết nối tri thức</span>
             </span>
           </a>
 
-          <nav className="hidden lg:flex items-center gap-1 p-1 rounded-full bg-white/[0.04] border border-white/10">
+          <nav className="hidden lg:flex items-center gap-1 p-1 bg-[#00e5ff]/[0.04] border border-[#00e5ff]/25 hud-title">
             {MODEL_TABS.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
@@ -510,14 +607,14 @@ export function App() {
                     setExplosionFactor(0);
                     setFocusedStepIndex(null);
                   }}
-                  className={`relative px-4 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors ${
+                  className={`relative px-4 py-1.5 text-[13px] tracking-wide font-medium cursor-pointer transition-colors ${
                     isActive ? 'text-ink-950' : 'text-slate-300 hover:text-white'
                   }`}
                 >
                   {isActive && (
                     <motion.span
                       layoutId="nav-pill"
-                      className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-300 to-emerald-300"
+                      className="absolute inset-0 bg-[#00e5ff] shadow-[0_0_14px_#00e5ff]"
                       transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                     />
                   )}
@@ -531,7 +628,19 @@ export function App() {
           </nav>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={toggleFullScreen} className="btn btn-ghost hidden sm:inline-flex">
+            <button
+              onClick={() => setHologram((v) => !v)}
+              className={`btn hidden md:inline-flex ${hologram ? 'btn-warm' : 'btn-ghost'}`}
+              aria-pressed={hologram}
+            >
+              <Orbit className="w-3.5 h-3.5" />
+              <span>Hologram</span>
+            </button>
+            <button onClick={startPresenter} className="btn btn-ghost hidden sm:inline-flex">
+              <Presentation className="w-3.5 h-3.5" />
+              <span>Trình chiếu</span>
+            </button>
+            <button onClick={toggleFullScreen} className="btn btn-ghost hidden xl:inline-flex">
               <Maximize2 className="w-3.5 h-3.5" />
               <span>Toàn màn hình</span>
             </button>
@@ -559,7 +668,7 @@ export function App() {
               <span className="live-dot" />
               Bài 5 · Các phân tử sinh học · Nucleic acid
             </div>
-            <h1 className="text-3xl sm:text-4xl xl:text-[44px] font-extrabold tracking-tight leading-[1.1] text-white text-balance">
+            <h1 className="hud-title text-3xl sm:text-4xl xl:text-[44px] font-extrabold tracking-tight leading-[1.1] text-white text-balance">
               Cầm phân tử <span className="text-gradient">DNA</span> trên tay — xoay, tách mạch
               và khám phá bằng cử chỉ
             </h1>
@@ -615,7 +724,7 @@ export function App() {
                 <span
                   className={`grid place-items-center w-10 h-10 rounded-xl shrink-0 transition-colors ${
                     isActive
-                      ? 'bg-gradient-to-br from-cyan-300 to-emerald-300 text-ink-950'
+                      ? 'bg-[#00e5ff] text-[#001a1f] shadow-[0_0_14px_#00e5ff]'
                       : 'bg-white/5 text-cyan-300'
                   }`}
                 >
@@ -784,16 +893,18 @@ export function App() {
         <section className="lg:col-span-6 flex flex-col gap-4 order-1 lg:order-2">
           <div
             className={
-              isFullScreen
-                ? 'fixed inset-0 z-50 w-screen h-screen bg-ink-950'
-                : 'relative flex-1 min-h-[460px] sm:min-h-[540px] lg:min-h-[600px] rounded-2xl overflow-hidden p-px bg-gradient-to-br from-cyan-400/50 via-violet-500/30 to-emerald-400/40 shadow-2xl shadow-cyan-950/50'
+              presenterMode
+                ? 'fixed inset-x-0 top-0 bottom-[var(--presenter-bar-h)] z-50 bg-[#02060d]'
+                : isFullScreen
+                  ? 'fixed inset-0 z-50 w-screen h-screen bg-ink-950'
+                  : 'relative flex-1 min-h-[460px] sm:min-h-[540px] lg:min-h-[600px] overflow-hidden p-px bg-gradient-to-br from-[#00e5ff]/60 via-[#00e5ff]/15 to-[#ffb000]/40 shadow-[0_0_40px_-10px_rgba(0,229,255,0.5)] [clip-path:polygon(22px_0,100%_0,100%_calc(100%-22px),calc(100%-22px)_100%,0_100%,0_22px)]'
             }
           >
             <div
               className={
-                isFullScreen
+                isFullScreen || presenterMode
                   ? 'relative w-full h-full'
-                  : 'relative w-full h-full rounded-[15px] overflow-hidden bg-[radial-gradient(ellipse_at_center,#0f1a33_0%,#05070f_75%)]'
+                  : 'relative w-full h-full overflow-hidden bg-[radial-gradient(ellipse_at_center,#06182a_0%,#02060d_75%)] [clip-path:polygon(21px_0,100%_0,100%_calc(100%-21px),calc(100%-21px)_100%,0_100%,0_21px)]'
               }
             >
               <MolecularViewport3D
@@ -811,6 +922,7 @@ export function App() {
                 pointerScreenCoords={telemetry.indexTipScreen}
                 focusedStepIndex={focusedStepIndex}
                 autoRotate={autoRotate}
+                hologram={hologram}
                 onSubunitHover={setHoveredInfo}
                 onSubunitSelect={(sub) => {
                   setSelectedSubunit(sub);
@@ -821,6 +933,15 @@ export function App() {
                   setCameraWristEuler(null);
                   setVirtualWristDeg(deg);
                 }}
+              />
+
+              <JarvisHud
+                activeGesture={telemetry.primaryGesture}
+                handsDetected={telemetry.handsDetected}
+                zoom={handZoomFactor || 1}
+                explosion={explosionFactor}
+                modelLabel={MODEL_TABS.find((t) => t.id === activeTab)?.navLabel || ''}
+                large={presenterMode}
               />
 
               <FloatingAtomOverlay
@@ -836,8 +957,8 @@ export function App() {
                 wristAnglesDeg={displayedWristAnglesDeg}
                 explosionFactor={explosionFactor}
                 arPassthrough={arPassthrough}
-                isFullScreen={isFullScreen}
-                onToggleFullScreen={toggleFullScreen}
+                isFullScreen={isFullScreen || presenterMode}
+                onToggleFullScreen={presenterMode ? exitPresenter : toggleFullScreen}
               />
             </div>
           </div>

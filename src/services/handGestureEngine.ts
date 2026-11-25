@@ -117,6 +117,12 @@ export class HandGestureEngine {
   private zoomEngageSpan = 0;
   private zoomAtEngage = 1;
 
+  // Hai tay
+  private twoHandEngaged: 'TWO_HAND_ZOOM' | 'TWO_HAND_UNZIP' | null = null;
+  private twoHandDist0 = 0;
+  private twoHandValue0 = 0;
+  private currentUnzip = 0;
+
   // Quán tính nắm tay
   private prevWristPos: Vec3 | null = null;
   private prevTimeMs = 0;
@@ -129,6 +135,13 @@ export class HandGestureEngine {
     if (multiHandLandmarks.length === 0) {
       this.resetTracking();
       return this.buildOutput('IDLE', 0, null, { pitch: 0, yaw: 0, roll: 0 });
+    }
+
+    if (multiHandLandmarks.length >= 2) {
+      const twoHand = this.processTwoHands(multiHandLandmarks[0], multiHandLandmarks[1], timestampMs);
+      if (twoHand) return twoHand;
+    } else {
+      this.twoHandEngaged = null;
     }
 
     const hand = multiHandLandmarks[0];
@@ -158,6 +171,79 @@ export class HandGestureEngine {
     }
 
     return this.buildOutput(this.committedGesture, multiHandLandmarks.length, features, angles, timestampMs);
+  }
+
+  /**
+   * 🙌 / ✊✊ Cử chỉ hai tay. Khoảng cách giữa hai lòng bàn tay được chia cho cỡ lòng bàn tay
+   * nên không phụ thuộc khoảng cách tới camera. Giá trị tính TƯƠNG ĐỐI từ lúc bắt đầu cử chỉ.
+   * Trả về null nếu hai tay không cùng tư thế (khi đó dùng tay thứ nhất như bình thường).
+   */
+  private processTwoHands(
+    a: NormalizedLandmark[],
+    b: NormalizedLandmark[],
+    tMs: number
+  ): HandGestureComputeOutput | null {
+    const pa = (i: number): Vec3 => ({ x: 1 - a[i].x, y: a[i].y, z: a[i].z });
+    const pb = (i: number): Vec3 => ({ x: 1 - b[i].x, y: b[i].y, z: b[i].z });
+    const fa = this.extractFeatures(pa);
+    const fb = this.extractFeatures(pb);
+    const center = (p: (i: number) => Vec3) => ({ x: (p(0).x + p(9).x) / 2, y: (p(0).y + p(9).y) / 2 });
+    const palm = (dist2D(pa(0), pa(9)) + dist2D(pb(0), pb(9))) / 2 || 0.1;
+    const d = dist2D(center(pa), center(pb)) / palm;
+
+    const bothOpen = !fa.fourFingersCurled && !fb.fourFingersCurled && !fa.isThumbsUp && !fb.isThumbsUp;
+    const bothFists = fa.fourFingersCurled && fb.fourFingersCurled;
+    const raw: ActiveGestureType | null = bothFists ? 'TWO_HAND_UNZIP' : bothOpen ? 'TWO_HAND_ZOOM' : null;
+    if (!raw) {
+      this.twoHandEngaged = null;
+      return null;
+    }
+
+    // Chống nhấp nháy giống cử chỉ một tay
+    if (raw !== this.committedGesture) {
+      if (raw === this.candidateGesture) this.candidateFrames += 1;
+      else {
+        this.candidateGesture = raw;
+        this.candidateFrames = 1;
+      }
+      if (this.candidateFrames < GESTURE_HOLD_FRAMES) {
+        return this.buildOutput(this.committedGesture, 2, fa, this.lastAngles(), tMs);
+      }
+      this.committedGesture = raw;
+      this.candidateFrames = 0;
+    }
+
+    if (this.twoHandEngaged !== raw) {
+      this.twoHandEngaged = raw;
+      this.twoHandDist0 = d;
+      this.twoHandValue0 = raw === 'TWO_HAND_ZOOM' ? this.currentZoomNormalized : this.currentUnzip;
+    }
+
+    const out = this.buildOutput(raw, 2, null, this.lastAngles());
+    out.telemetry.primaryGesture = raw;
+    out.telemetry.gestureConfidence = 0.95;
+    out.telemetry.pinchDistance = Number(d.toFixed(2));
+
+    if (raw === 'TWO_HAND_ZOOM') {
+      // Kéo hai tay xa gấp đôi → phóng to gấp đôi
+      const target = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.twoHandValue0 * (d / this.twoHandDist0)));
+      this.currentZoomNormalized += (target - this.currentZoomNormalized) * 0.3;
+      out.targetZoomFactor = this.currentZoomNormalized;
+      out.telemetry.zoomLevelNormalized = Number(this.currentZoomNormalized.toFixed(2));
+    } else {
+      // Mỗi lần kéo hai nắm tay ra thêm ~3 lần cỡ lòng bàn tay → tách hoàn toàn
+      this.currentUnzip = Math.min(1, Math.max(0, this.twoHandValue0 + (d - this.twoHandDist0) / 3));
+      out.targetUnzipFactor = this.currentUnzip;
+    }
+    return out;
+  }
+
+  private lastAngles() {
+    return {
+      pitch: this.filters.pitch.value(),
+      yaw: this.filters.yaw.value(),
+      roll: this.filters.roll.value()
+    };
   }
 
   /** Đặt lại khi mất dấu bàn tay */
@@ -339,6 +425,7 @@ export class HandGestureEngine {
     switch (gesture) {
       case 'THUMBS_UP_UNZIP':
         out.targetUnzipFactor = 0.9;
+        this.currentUnzip = 0.9;
         break;
 
       case 'FIST_INERTIA_GRAB': {
@@ -382,6 +469,7 @@ export class HandGestureEngine {
       case 'PALM_3D_ORIENTATION':
         out.targetWristEuler = { x: angles.pitch, y: angles.yaw, z: angles.roll };
         out.targetUnzipFactor = 0;
+        this.currentUnzip = 0;
         break;
     }
 
@@ -440,6 +528,20 @@ export const GESTURE_LABELS_VI: Record<
     subtitle:
       'Kéo rê nắm tay để tạo đà xoay tự do mô hình 3D trong không gian theo quán tính vật lý',
     badgeColor: 'text-fuchsia-400'
+  },
+  TWO_HAND_ZOOM: {
+    icon: '🙌',
+    title: '🙌 Hai Tay Xoè — Kéo Xa Để Phóng To, Lại Gần Để Thu Nhỏ',
+    shortTitle: 'Hai tay · phóng to',
+    subtitle: 'Khoảng cách giữa hai lòng bàn tay quyết định độ phóng đại (tính từ lúc bắt đầu cử chỉ)',
+    badgeColor: 'text-yellow-300'
+  },
+  TWO_HAND_UNZIP: {
+    icon: '✊✊',
+    title: '✊✊ Hai Tay Nắm — Mỗi Tay Cầm Một Mạch, Kéo Ra Để Tách',
+    shortTitle: 'Hai tay · tách mạch',
+    subtitle: 'Kéo hai nắm tay ra hai bên để cắt liên kết hydrogen, tách 2 mạch đơn; đưa lại gần để ghép lại',
+    badgeColor: 'text-orange-300'
   },
   POINT_INSPECT: {
     shortTitle: 'Ngón trỏ · tra cứu',

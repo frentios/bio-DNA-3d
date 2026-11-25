@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import type { HandLandmarker } from '@mediapipe/tasks-vision';
 import {
   HandGestureEngine,
   HandGestureComputeOutput,
@@ -65,17 +65,26 @@ export const HandTrackerOverlay: React.FC<HandTrackerOverlayProps> = ({
 
     try {
       if (!handLandmarkerRef.current) {
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm'
-        );
+        // Chỉ tải thư viện MediaPipe (~ vài trăm kB JS + 11 MB WASM) khi người dùng bật camera
+        const { FilesetResolver, HandLandmarker } = await import('@mediapipe/tasks-vision');
+
+        // Ưu tiên bản lưu sẵn trong trang (chạy được khi mất mạng), nếu không có thì dùng CDN
+        const localBase = `${import.meta.env.BASE_URL}mediapipe/`;
+        const hasLocal = await fetch(`${localBase}hand_landmarker.task`, { method: 'HEAD' })
+          .then((r) => r.ok && !(r.headers.get('content-type') || '').includes('text/html'))
+          .catch(() => false);
+        const wasmBase = hasLocal
+          ? `${localBase}wasm`
+          : 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
+        const modelPath = hasLocal
+          ? `${localBase}hand_landmarker.task`
+          : 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+
+        const vision = await FilesetResolver.forVisionTasks(wasmBase);
         const makeOptions = (delegate: 'GPU' | 'CPU') => ({
-          baseOptions: {
-            modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-            delegate
-          },
+          baseOptions: { modelAssetPath: modelPath, delegate },
           runningMode: 'VIDEO' as const,
-          numHands: 1,
+          numHands: 2,
           minHandDetectionConfidence: 0.55,
           minHandPresenceConfidence: 0.55,
           minTrackingConfidence: 0.55
