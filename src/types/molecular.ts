@@ -89,9 +89,9 @@ export interface HighSchoolLessonPreset {
 }
 
 export type MolecularLayerVisibility = {
-  backbone: boolean; // Khung xương Đường - Photphat (5'->3' & 3'->5')
-  nucleobase: boolean; // Các bazơ nitơ (A, T, G, C, U)
-  hydrogenBonds: boolean; // Liên kết Hydro (2 chấu A=T, 3 chấu G≡C)
+  backbone: boolean; // Khung xương Đường - phosphate (5'->3' & 3'->5')
+  nucleobase: boolean; // Các base nitrogen (A, T, G, C, U)
+  hydrogenBonds: boolean; // Liên kết hydrogen (2 chấu A=T, 3 chấu G≡C)
   baseLabels3D: boolean; // Nhãn chữ A, T, G, C, U và ký hiệu nguyên tử 3D
   sgkRuler3D: boolean; // Trục tâm, Đế cầm & Thước đo kích thước 3D
 };

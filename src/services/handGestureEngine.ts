@@ -343,9 +343,10 @@ export class HandGestureEngine {
 
 export const GESTURE_LABELS_VI: Record<
   ActiveGestureType,
-  { icon: string; title: string; subtitle: string; badgeColor: string }
+  { icon: string; title: string; shortTitle: string; subtitle: string; badgeColor: string }
 > = {
   IDLE: {
+    shortTitle: 'Đang chờ',
     icon: '🖐️',
     title: 'Đang Chờ Cử Chỉ Bàn Tay / Điều Khiển Chuột',
     subtitle:
@@ -353,6 +354,7 @@ export const GESTURE_LABELS_VI: Record<
     badgeColor: 'text-slate-300'
   },
   PALM_3D_ORIENTATION: {
+    shortTitle: 'Xoè tay · xoay 3D',
     icon: '✋',
     title: '✋ Xòe Bàn Tay — Đồng Bộ Góc Nghiêng 3D (Roll · Pitch · Yaw)',
     subtitle:
@@ -360,6 +362,7 @@ export const GESTURE_LABELS_VI: Record<
     badgeColor: 'text-cyan-400'
   },
   PEACE_TOP_VIEW: {
+    shortTitle: 'Chữ V · nhìn từ đỉnh',
     icon: '✌️',
     title: '✌️ Giơ 2 Ngón Chữ V — Góc Nhìn Từ Trên Đỉnh Xuống (Top-Down)',
     subtitle:
@@ -367,13 +370,15 @@ export const GESTURE_LABELS_VI: Record<
     badgeColor: 'text-sky-400'
   },
   THUMBS_UP_UNZIP: {
+    shortTitle: 'Ngón cái · tách mạch',
     icon: '👍',
     title: '👍 Giơ Ngón Tay Cái — Tháo Xoắn & Tách Đôi Mạch / Tách Đơn Phân',
     subtitle:
-      'Tách đôi 2 mạch đơn DNA (5\'→3\' & 3\'→5\') hoặc tách 3 thành phần cấu tạo của Nucleotide (Photphat - Đường - Bazơ)',
+      'Tách đôi 2 mạch đơn DNA (5\'→3\' & 3\'→5\') hoặc tách 3 thành phần cấu tạo của Nucleotide (phosphate - Đường - base)',
     badgeColor: 'text-orange-400'
   },
   PINCH_ZOOM: {
+    shortTitle: 'Cái + trỏ · phóng to',
     icon: '👌',
     title: '👌 Ngón Cái + Ngón Trỏ — Mở Rộng Để Phóng To / Chụm Lại Để Thu Nhỏ',
     subtitle:
@@ -381,6 +386,7 @@ export const GESTURE_LABELS_VI: Record<
     badgeColor: 'text-amber-400'
   },
   FIST_INERTIA_GRAB: {
+    shortTitle: 'Nắm tay · xoay quán tính',
     icon: '✊',
     title: '✊ Nắm Bàn Tay Lại (Fist / Grab) — Kéo Rê Xoay Theo Quán Tính',
     subtitle:
@@ -388,10 +394,11 @@ export const GESTURE_LABELS_VI: Record<
     badgeColor: 'text-fuchsia-400'
   },
   POINT_INSPECT: {
+    shortTitle: 'Ngón trỏ · tra cứu',
     icon: '👉',
     title: '👉 Chỉ 1 Ngón Trỏ (Point & Inspect) — Tra Cứu Thông Số Phân Tử',
     subtitle:
-      'Rà đầu ngón trỏ vào nucleotide bất kỳ để xem tên (A, T, G, C, U), công thức hóa học & số liên kết Hydro',
+      'Rà đầu ngón trỏ vào nucleotide bất kỳ để xem tên (A, T, G, C, U), công thức hóa học & số liên kết hydrogen',
     badgeColor: 'text-emerald-400'
   }
 };

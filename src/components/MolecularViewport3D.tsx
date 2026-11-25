@@ -67,7 +67,13 @@ function createTextBadgeSprite(
   ctx.stroke();
 
   ctx.fillStyle = textColor;
-  ctx.font = 'bold 46px "Plus Jakarta Sans", sans-serif';
+  // Tự co cỡ chữ để nhãn dài không bị cắt mất ký tự
+  let fontPx = 46;
+  ctx.font = `700 ${fontPx}px "Be Vietnam Pro", sans-serif`;
+  while (fontPx > 14 && ctx.measureText(text).width > 276) {
+    fontPx -= 2;
+    ctx.font = `700 ${fontPx}px "Be Vietnam Pro", sans-serif`;
+  }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, 160, 65);
@@ -265,6 +271,8 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
     dnaGroup.add(highlightRing);
     highlightRingRef.current = highlightRing;
 
+    let wheelZoomMul = 1;
+    let lastHoverKey = '';
     let isDragging = false;
     let isRightDrag = false;
     let prevMouse = { x: 0, y: 0 };
@@ -332,6 +340,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (!cameraRef.current) return;
+      wheelZoomMul = THREE.MathUtils.clamp(wheelZoomMul * (1 + e.deltaY * 0.0012), 0.3, 2);
       cameraRef.current.position.z = Math.max(
         14,
         Math.min(110, cameraRef.current.position.z + e.deltaY * 0.035)
@@ -405,7 +414,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
         if (state.focusedStepIndex !== null) {
           cam.position.z = THREE.MathUtils.lerp(cam.position.z, 24, 0.08);
         } else if (state.handZoomFactor !== null) {
-          const targetZ = defaultZ / state.handZoomFactor;
+          const targetZ = (defaultZ / state.handZoomFactor) * wheelZoomMul;
           cam.position.z = THREE.MathUtils.lerp(
             cam.position.z,
             THREE.MathUtils.clamp(targetZ, 15, 105),
@@ -477,17 +486,24 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
                 const screenX = ((screenPos.x + 1) * container.clientWidth) / 2;
                 const screenY = ((-screenPos.y + 1) * container.clientHeight) / 2;
 
-                onSubunitHover({ subunit, screenX, screenY });
+                const hoverKey = `${subunit.id}|${Math.round(screenX / 4)}|${Math.round(screenY / 4)}`;
+                if (hoverKey !== lastHoverKey) {
+                  lastHoverKey = hoverKey;
+                  onSubunitHover({ subunit, screenX, screenY });
+                }
               }
             } else {
               if (highlightRingRef.current) highlightRingRef.current.visible = false;
-              onSubunitHover(null);
+              if (lastHoverKey !== '') {
+                lastHoverKey = '';
+                onSubunitHover(null);
+              }
             }
           }
         }
       }
 
-      renderer.render(scene, cam);
+      if (cam) renderer.render(scene, cam);
     };
 
     animId = requestAnimationFrame(animate);
@@ -566,7 +582,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
       addDynamic(headerBadge, new THREE.Vector3(0, 12.2, 0), new THREE.Vector3(0, 0, 0), 'sgkRuler3D');
 
       // -----------------------------------------------------------------------
-      // SUBUNIT 1: NHÓM PHOTPHAT (-PO₄³⁻) at Left (-10, 4.5, 0)
+      // SUBUNIT 1: NHÓM PHOSPHATE (-PO₄³⁻) at Left (-10, 4.5, 0)
       // -----------------------------------------------------------------------
       const pCenter = new THREE.Vector3(-10.2, 4.2, 0);
       const inspectPhosphate: InspectableSubunit = {
@@ -576,11 +592,11 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
         baseCode: selectedNucleotideBase,
         partnerBaseCode: baseCfg.partnerCode,
         strandLabel: 'Cấu tạo đơn phân Nucleotide',
-        titleVi: '① Nhóm Photphat (-PO₄³⁻ / Axit Photphoric H₃PO₄)',
+        titleVi: '① Nhóm phosphate (-PO₄³⁻ / phosphoric acid H₃PO₄)',
         chemicalFormula: '-PO₄³⁻ (Gồm 1 nguyên tử P liên kết với 4 nguyên tử O)',
-        chemicalGroupVi: 'Thành phần tạo tính axit & mang điện tích âm của chuỗi DNA/RNA',
+        chemicalGroupVi: 'Thành phần tạo tính acid & mang điện tích âm của chuỗi DNA/RNA',
         ntbsRuleVi:
-          'Nhóm Photphat gắn vào nguyên tử Carbon C5\' của đường Pentozơ qua liên kết este, và nối với C3\'-OH của nucleotide kế tiếp tạo thành liên kết cộng hóa trị Photphođieste bền vững.',
+          'Nhóm phosphate gắn vào nguyên tử Carbon C5\' của đường pentose qua liên kết phosphodiester, và nối với C3\'-OH của nucleotide kế tiếp tạo thành liên kết cộng hóa trị phosphodiester bền vững.',
         hydrogenBondCount: 0,
         cycleNumber: 1,
         heightAngstrom: 4.2
@@ -593,7 +609,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
       );
       addDynamic(pAtom, pCenter, expPhosphate, 'backbone', inspectPhosphate);
 
-      const pLabel = createTextBadgeSprite('P (Photpho)', '#7C2D12', '#FDBA74', '#F97316', 4.2, 1.3);
+      const pLabel = createTextBadgeSprite('P (phosphorus)', '#7C2D12', '#FDBA74', '#F97316', 4.2, 1.3);
       addDynamic(
         pLabel,
         pCenter.clone().add(new THREE.Vector3(0, 2.3, 0)),
@@ -630,7 +646,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
       });
 
       const subBanner1 = createTextBadgeSprite(
-        '① NHÓM PHOTPHAT (-PO₄³⁻)',
+        '① NHÓM PHOSPHATE (-PO₄³⁻)',
         '#431407',
         '#FDBA74',
         '#F97316',
@@ -652,11 +668,11 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
         titleVi: isRNA
           ? '② Đường Ribose 5 Carbon (C₅H₁₀O₅ — Đơn phân mRNA)'
           : '② Đường Deoxyribose 5 Carbon (C₅H₁₀O₄ — Đơn phân DNA)',
-        chemicalFormula: isRNA ? 'C₅H₁₀O₅ (Có nhóm -OH ở C2\')' : 'C₅H₁₀O₄ (Thiếu 1 nguyên tử Oxy ở C2\')',
+        chemicalFormula: isRNA ? 'C₅H₁₀O₅ (Có nhóm -OH ở C2\')' : 'C₅H₁₀O₄ (Thiếu 1 nguyên tử oxygen ở C2\')',
         chemicalGroupVi: 'Đường đơn 5 Carbon cấu tạo dạng vòng 5 cạnh (Furanose)',
         ntbsRuleVi: isRNA
           ? 'Đường Ribose có nhóm -OH tự do ở vị trí C2\', làm phân tử mRNA linh hoạt hơn nhưng kém bền hơn DNA.'
-          : 'Đường Deoxyribose ("De-oxy" = mất 1 Oxy ở vị trí C2\', chỉ còn -H) giúp chuỗi xoắn kép DNA cực kỳ bền vững.',
+          : 'Đường Deoxyribose ("De-oxy" = mất 1 oxygen ở vị trí C2\', chỉ còn -H) giúp chuỗi xoắn kép DNA cực kỳ bền vững.',
         hydrogenBondCount: 0,
         cycleNumber: 1,
         heightAngstrom: 0
@@ -671,8 +687,8 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
       const c5Pos = new THREE.Vector3(-5.8, 3.0, 0);
 
       const sugarAtoms = [
-        { pos: o4Pos, color: 0xef4444, r: 1.1, label: "O4' (Oxy vòng)" },
-        { pos: c1Pos, color: 0x38bdf8, r: 1.15, label: "C1' (Nối Bazơ)" },
+        { pos: o4Pos, color: 0xef4444, r: 1.1, label: "O4' (oxygen trong vòng)" },
+        { pos: c1Pos, color: 0x38bdf8, r: 1.15, label: "C1' (Nối base)" },
         { pos: c2Pos, color: 0x38bdf8, r: 1.15, label: "C2'" },
         { pos: c3Pos, color: 0x38bdf8, r: 1.15, label: "C3'" },
         { pos: c4Pos, color: 0x38bdf8, r: 1.15, label: "C4'" },
@@ -776,7 +792,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
       addDynamic(subBanner2, new THREE.Vector3(0, 9.2, 0), expSugar, 'sgkRuler3D');
 
       // -----------------------------------------------------------------------
-      // SUBUNIT 3: BAZƠ NITƠ (A, T, G, C, U) at Right (+10.5, 1.5, 0)
+      // SUBUNIT 3: BASE NITROGEN (A, T, G, C, U) at Right (+10.5, 1.5, 0)
       // -----------------------------------------------------------------------
       const inspectBase: InspectableSubunit = {
         id: `nuc-base-${selectedNucleotideBase}`,
@@ -785,7 +801,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
         baseCode: selectedNucleotideBase,
         partnerBaseCode: baseCfg.partnerCode,
         strandLabel: 'Cấu tạo đơn phân Nucleotide',
-        titleVi: `③ Bazơ Nitơ ${baseCfg.vietnameseName}`,
+        titleVi: `③ Base nitrogen ${baseCfg.vietnameseName}`,
         chemicalFormula: baseCfg.chemicalFormula,
         chemicalGroupVi: baseCfg.groupType,
         ntbsRuleVi: baseCfg.ntbsSummary,
@@ -972,7 +988,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
       }
 
       const subBanner3 = createTextBadgeSprite(
-        `③ BAZƠ NITƠ: ${baseCfg.code} (${baseCfg.nucleotideFormula})`,
+        `③ BASE NITROGEN: ${baseCfg.code} (${baseCfg.nucleotideFormula})`,
         '#064E3B',
         '#FFFFFF',
         baseCfg.colorHex,
@@ -1203,7 +1219,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
               : `${cfgMrna.nucleotideFormula} · Đường Ribose C₅H₁₀O₅`,
           chemicalGroupVi:
             step.mrnaBase === 'U'
-              ? 'Bazơ Uracil (U) thay thế cho Thymine (T) trên mRNA'
+              ? 'base Uracil (U) thay thế cho Thymine (T) trên mRNA'
               : 'Đơn phân Ribonucleotide trên mạch đơn mRNA',
           ntbsRuleVi:
             step.mrnaBase === 'U'
@@ -1319,11 +1335,11 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
             baseCode,
             partnerBaseCode: partnerCode,
             strandLabel: strandNo === 1 ? "Mạch 1 (5' → 3')" : "Mạch 2 (3' → 5')",
-            titleVi: `Nhóm Photphat (-PO₄³⁻) · Bậc #${step.stepIndex}`,
+            titleVi: `Nhóm phosphate (-PO₄³⁻) · Bậc #${step.stepIndex}`,
             chemicalFormula: 'PO₄³⁻ (Nguyên tử P màu cam + 4 nguyên tử O màu đỏ)',
-            chemicalGroupVi: 'Liên kết cộng hóa trị Photphođieste dọc khung xương DNA',
+            chemicalGroupVi: 'Liên kết cộng hóa trị phosphodiester dọc khung xương DNA',
             ntbsRuleVi:
-              'Các nhóm Photphat (-PO₄³⁻) nối giữa C5\' và C3\' của 2 đường Deoxyribose kế tiếp tạo thành khung xương vững chắc bên ngoài chuỗi xoắn kép.',
+              'Các nhóm phosphate (-PO₄³⁻) nối giữa C5\' và C3\' của 2 đường Deoxyribose kế tiếp tạo thành khung xương vững chắc bên ngoài chuỗi xoắn kép.',
             hydrogenBondCount: step.hydrogenBonds,
             cycleNumber: step.cycleNumber,
             heightAngstrom: y
@@ -1361,9 +1377,9 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
             strandLabel: strandNo === 1 ? "Mạch 1 (5' → 3')" : "Mạch 2 (3' → 5')",
             titleVi: `Đường Deoxyribose (C₅H₁₀O₄) · Bậc #${step.stepIndex}`,
             chemicalFormula: 'C₅H₁₀O₄ (Vòng 5 cạnh: C1\', C2\', C3\', C4\', O4\' và C5\')',
-            chemicalGroupVi: 'Đường Pentozơ 5 Carbon gắn với Bazơ Nitơ tại C1\'',
+            chemicalGroupVi: 'Đường pentose 5 Carbon gắn với Base nitrogen tại C1\'',
             ntbsRuleVi:
-              'Vòng đường Deoxyribose kết nối khung Photphat bên ngoài với Bazơ Nitơ hướng vào tâm xoắn.',
+              'Vòng đường Deoxyribose kết nối khung phosphate bên ngoài với Base nitrogen hướng vào tâm xoắn.',
             hydrogenBondCount: step.hydrogenBonds,
             cycleNumber: step.cycleNumber,
             heightAngstrom: y
@@ -1534,7 +1550,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
             baseCode: step.strand1Base,
             partnerBaseCode: step.strand2Base,
             strandLabel: 'Cầu nối / Trục tâm xoắn',
-            titleVi: `Liên kết Hydro phân tử (${step.strand1Base} ${hCount === 2 ? '=' : '≡'} ${step.strand2Base})`,
+            titleVi: `Liên kết hydrogen phân tử (${step.strand1Base} ${hCount === 2 ? '=' : '≡'} ${step.strand2Base})`,
             chemicalFormula:
               hCount === 2 ? '2 cầu nối N–H···O / N···H–N' : '3 cầu nối N–H···O / N–H···N',
             chemicalGroupVi: `Lực hút tĩnh điện giữa nguyên tử H mang điện dương và O/N mang điện âm`,
@@ -1799,12 +1815,12 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
           baseCode: step.strand1Base,
           partnerBaseCode: step.strand2Base,
           strandLabel: 'Cầu nối / Trục tâm xoắn',
-          titleVi: `Liên kết Hydro (${step.strand1Base} ${hCount === 2 ? '=' : '≡'} ${step.strand2Base})`,
+          titleVi: `Liên kết hydrogen (${step.strand1Base} ${hCount === 2 ? '=' : '≡'} ${step.strand2Base})`,
           chemicalFormula:
             hCount === 2 ? 'N–H···O / N···H–N (2 cầu nối)' : 'N–H···O / N–H···N (3 cầu nối)',
-          chemicalGroupVi: `Liên kết tĩnh điện yếu (${hCount} liên kết Hydro)`,
+          chemicalGroupVi: `Liên kết tĩnh điện yếu (${hCount} liên kết hydrogen)`,
           ntbsRuleVi:
-            'Dùng Ngón Cái + Ngón Trỏ (👌) để Zoom sát vào các chốt liên kết Hydro này, hoặc giơ ngón cái (👍) để tháo xoắn tách đôi 2 mạch.',
+            'Dùng Ngón Cái + Ngón Trỏ (👌) để Zoom sát vào các chốt liên kết hydrogen này, hoặc giơ ngón cái (👍) để tháo xoắn tách đôi 2 mạch.',
           hydrogenBondCount: hCount,
           cycleNumber: step.cycleNumber,
           heightAngstrom: step.yAngstrom
@@ -1949,7 +1965,7 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
   }, [cameraOrientation, activeTab]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden select-none bg-[#070B14]">
+    <div className="relative w-full h-full overflow-hidden select-none bg-[#05070f]">
       {arPassthrough && (
         <video
           ref={arVideoRef}
@@ -1961,13 +1977,24 @@ export const MolecularViewport3D: React.FC<MolecularViewport3DProps> = ({
       )}
 
       {!arPassthrough && (
-        <div
-          className="absolute inset-0 pointer-events-none opacity-55"
-          style={{
-            backgroundImage:
-              'radial-gradient(circle at 50% 50%, rgba(14, 165, 233, 0.16) 0%, rgba(7, 11, 20, 0.96) 72%)'
-          }}
-        />
+        <>
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage:
+                'radial-gradient(ellipse 60% 70% at 50% 45%, rgba(34, 211, 238, 0.14) 0%, transparent 70%), radial-gradient(ellipse 50% 40% at 80% 90%, rgba(168, 85, 247, 0.12) 0%, transparent 70%), radial-gradient(ellipse 40% 40% at 15% 15%, rgba(16, 185, 129, 0.10) 0%, transparent 70%)'
+            }}
+          />
+          <div
+            className="absolute inset-0 pointer-events-none opacity-40"
+            style={{
+              backgroundImage: 'radial-gradient(rgba(148, 163, 184, 0.35) 1px, transparent 1px)',
+              backgroundSize: '28px 28px',
+              maskImage: 'radial-gradient(ellipse at center, black 20%, transparent 70%)',
+              WebkitMaskImage: 'radial-gradient(ellipse at center, black 20%, transparent 70%)'
+            }}
+          />
+        </>
       )}
 
       <div ref={containerRef} className="relative z-10 w-full h-full cursor-grab active:cursor-grabbing" />

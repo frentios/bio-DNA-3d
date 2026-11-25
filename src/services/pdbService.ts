@@ -18,13 +18,15 @@ export const COMPLEMENT_BASE: Record<NucleotideCode, NucleotideCode> = {
 export const MODEL_TABS: {
   id: ModelTabId;
   shortTitle: string;
+  navLabel: string;
   fullTitle: string;
   badge: string;
   summary: string;
 }[] = [
   {
     id: 'WATSON_CRICK_DNA',
-    shortTitle: '1. DNA Đơn Giản (Watson-Crick)',
+    shortTitle: 'DNA Watson – Crick',
+    navLabel: 'Watson – Crick',
     fullTitle: 'Mô Hình DNA Xoắn Kép Đơn Giản Theo Watson & Crick (1953)',
     badge: 'Chuẩn 1953',
     summary:
@@ -32,23 +34,26 @@ export const MODEL_TABS: {
   },
   {
     id: 'MOLECULAR_DNA',
-    shortTitle: '2. DNA Dạng Phân Tử (Nguyên Tử)',
+    shortTitle: 'DNA dạng phân tử',
+    navLabel: 'Phân tử',
     fullTitle: 'Mô Hình DNA Ở Dạng Phân Tử & Liên Kết Hóa Trị (Ball-and-Stick 3D)',
     badge: 'Cấu trúc phân tử',
     summary:
-      'Hiển thị rõ từng cụm nguyên tử Photphat (-PO₄³⁻), vòng 5 cạnh Đường Deoxyribose (C₅H₁₀O₄) và vòng thơm Purin (2 vòng) / Pirimiđin (1 vòng).'
+      'Hiển thị rõ từng cụm nguyên tử phosphate (-PO₄³⁻), vòng 5 cạnh Đường Deoxyribose (C₅H₁₀O₄) và vòng thơm Purine (2 vòng) / Pyrimidine (1 vòng).'
   },
   {
     id: 'NUCLEOTIDE_STRUCTURE',
-    shortTitle: '3. Cấu Trúc Đơn Phân Nucleotide',
+    shortTitle: 'Cấu trúc nucleotide',
+    navLabel: 'Nucleotide',
     fullTitle: 'Giải Phẫu 3D Cấu Trúc Hóa Học Của 1 Đơn Phân Nucleotide',
     badge: '3 thành phần cấu tạo',
     summary:
-      'Khảo sát chi tiết 3 tiểu phần cấu tạo nên 1 Nucleotide: (1) Nhóm Photphat ở C5\', (2) Đường Pentozơ 5 Carbon (C1\'→C5\') và (3) Bazơ Nitơ (A, T, G, C, U) ở C1\'.'
+      'Khảo sát chi tiết 3 tiểu phần cấu tạo nên 1 Nucleotide: (1) Nhóm phosphate ở C5\', (2) Đường pentose 5 Carbon (C1\'→C5\') và (3) Base nitrogen (A, T, G, C, U) ở C1\'.'
   },
   {
     id: 'DNA_VS_MRNA',
-    shortTitle: '4. So Sánh 2 Mô Hình DNA & mRNA',
+    shortTitle: 'So sánh DNA & mRNA',
+    navLabel: 'DNA & mRNA',
     fullTitle: 'Đặt Cạnh Nhau 2 Mô Hình 3D: Chuỗi Xoắn Kép DNA & Mạch Đơn mRNA Phiên Mã',
     badge: 'Đối chiếu trực quan',
     summary:
@@ -65,7 +70,7 @@ export const BASE_VISUAL_CONFIG: Record<
     chemicalFormula: string;
     nucleotideFormula: string;
     molarMass: string;
-    groupType: 'Purin (Kích thước lớn - 2 vòng)' | 'Pirimiđin (Kích thước bé - 1 vòng)';
+    groupType: 'Purine (Kích thước lớn - 2 vòng)' | 'Pyrimidine (Kích thước bé - 1 vòng)';
     colorHex: string;
     emissiveHex: string;
     barLengthRatio: number;
@@ -76,111 +81,111 @@ export const BASE_VISUAL_CONFIG: Record<
 > = {
   A: {
     code: 'A',
-    vietnameseName: 'Adenine (Ađênin - A)',
+    vietnameseName: 'Adenine (A)',
     englishName: 'Adenine',
-    chemicalFormula: 'C₅H₅N₅ (Bazơ) · C₁₀H₁₄N₅O₆P (dAMP)',
+    chemicalFormula: 'C₅H₅N₅ (base) · C₁₀H₁₄N₅O₆P (dAMP)',
     nucleotideFormula: 'C₅H₅N₅',
     molarMass: '135,13 g/mol',
-    groupType: 'Purin (Kích thước lớn - 2 vòng)',
+    groupType: 'Purine (Kích thước lớn - 2 vòng)',
     colorHex: '#10B981', // Emerald Green
     emissiveHex: '#065F46',
     barLengthRatio: 0.56,
     hBonds: 2,
     partnerCode: 'T',
     ntbsSummary:
-      'Adenine (A - cấu trúc 2 vòng Purin gồm vòng 6 cạnh ghép vòng 5 cạnh) bắt cặp bổ sung với Thymine (T) trên DNA hoặc Uracil (U) trên mRNA bằng 2 liên kết Hydro.'
+      'Adenine (A - cấu trúc 2 vòng Purine gồm vòng 6 cạnh ghép vòng 5 cạnh) bắt cặp bổ sung với Thymine (T) trên DNA hoặc Uracil (U) trên mRNA bằng 2 liên kết hydrogen.'
   },
   T: {
     code: 'T',
-    vietnameseName: 'Thymine (Timin - T)',
+    vietnameseName: 'Thymine (T)',
     englishName: 'Thymine',
-    chemicalFormula: 'C₅H₆N₂O₂ (Bazơ) · C₁₀H₁₅N₂O₈P (dTMP)',
+    chemicalFormula: 'C₅H₆N₂O₂ (base) · C₁₀H₁₅N₂O₈P (dTMP)',
     nucleotideFormula: 'C₅H₆N₂O₂',
     molarMass: '126,11 g/mol',
-    groupType: 'Pirimiđin (Kích thước bé - 1 vòng)',
+    groupType: 'Pyrimidine (Kích thước bé - 1 vòng)',
     colorHex: '#F59E0B', // Golden Amber
     emissiveHex: '#78350F',
     barLengthRatio: 0.44,
     hBonds: 2,
     partnerCode: 'A',
     ntbsSummary:
-      'Thymine (T - vòng đơn 6 cạnh Pirimiđin có gắn nhóm metyl -CH₃ ở C5, chỉ có ở DNA) luôn bắt cặp với Adenine (A) qua 2 liên kết Hydro (T = A).'
+      'Thymine (T - vòng đơn 6 cạnh Pyrimidine có gắn nhóm methyl -CH₃ ở C5, chỉ có ở DNA) luôn bắt cặp với Adenine (A) qua 2 liên kết hydrogen (T = A).'
   },
   G: {
     code: 'G',
-    vietnameseName: 'Guanine (Guanin - G)',
+    vietnameseName: 'Guanine (G)',
     englishName: 'Guanine',
-    chemicalFormula: 'C₅H₅N₅O (Bazơ) · C₁₀H₁₄N₅O₇P (dGMP)',
+    chemicalFormula: 'C₅H₅N₅O (base) · C₁₀H₁₄N₅O₇P (dGMP)',
     nucleotideFormula: 'C₅H₅N₅O',
     molarMass: '151,13 g/mol',
-    groupType: 'Purin (Kích thước lớn - 2 vòng)',
+    groupType: 'Purine (Kích thước lớn - 2 vòng)',
     colorHex: '#06B6D4', // Vibrant Cyan
     emissiveHex: '#155E75',
     barLengthRatio: 0.56,
     hBonds: 3,
     partnerCode: 'C',
     ntbsSummary:
-      'Guanine (G - cấu trúc 2 vòng Purin có nhóm =O ở C6 và -NH₂ ở C2) luôn bắt cặp bổ sung với Cytosine (C) qua 3 liên kết Hydro bền vững (G ≡ C).'
+      'Guanine (G - cấu trúc 2 vòng Purine có nhóm =O ở C6 và -NH₂ ở C2) luôn bắt cặp bổ sung với Cytosine (C) qua 3 liên kết hydrogen bền vững (G ≡ C).'
   },
   C: {
     code: 'C',
-    vietnameseName: 'Cytosine (Xitôzin - C)',
+    vietnameseName: 'Cytosine (C)',
     englishName: 'Cytosine',
-    chemicalFormula: 'C₄H₅N₃O (Bazơ) · C₉H₁₄N₃O₇P (dCMP)',
+    chemicalFormula: 'C₄H₅N₃O (base) · C₉H₁₄N₃O₇P (dCMP)',
     nucleotideFormula: 'C₄H₅N₃O',
     molarMass: '111,10 g/mol',
-    groupType: 'Pirimiđin (Kích thước bé - 1 vòng)',
+    groupType: 'Pyrimidine (Kích thước bé - 1 vòng)',
     colorHex: '#F43F5E', // Coral Rose
     emissiveHex: '#881337',
     barLengthRatio: 0.44,
     hBonds: 3,
     partnerCode: 'G',
     ntbsSummary:
-      'Cytosine (C - vòng đơn 6 cạnh Pirimiđin có ở cả DNA và mRNA) luôn bắt cặp bổ sung với Guanine (G) qua 3 liên kết Hydro bền vững (C ≡ G).'
+      'Cytosine (C - vòng đơn 6 cạnh Pyrimidine có ở cả DNA và mRNA) luôn bắt cặp bổ sung với Guanine (G) qua 3 liên kết hydrogen bền vững (C ≡ G).'
   },
   U: {
     code: 'U',
-    vietnameseName: 'Uracil (Uraxin - U · Đặc trưng mRNA)',
+    vietnameseName: 'Uracil (U · chỉ có ở RNA)',
     englishName: 'Uracil',
-    chemicalFormula: 'C₄H₄N₂O₂ (Bazơ) · C₉H₁₃N₂O₉P (UMP)',
+    chemicalFormula: 'C₄H₄N₂O₂ (base) · C₉H₁₃N₂O₉P (UMP)',
     nucleotideFormula: 'C₄H₄N₂O₂',
     molarMass: '112,09 g/mol',
-    groupType: 'Pirimiđin (Kích thước bé - 1 vòng)',
+    groupType: 'Pyrimidine (Kích thước bé - 1 vòng)',
     colorHex: '#A855F7', // Vibrant Violet for Uracil
     emissiveHex: '#581C87',
     barLengthRatio: 0.44,
     hBonds: 2,
     partnerCode: 'A',
     ntbsSummary:
-      'Uracil (U - vòng đơn 6 cạnh Pirimiđin thay thế cho Thymine trên phân tử mRNA, không có nhóm -CH₃ ở C5) bắt cặp bổ sung với Adenine (A) của mạch khuôn DNA trong quá trình phiên mã.'
+      'Uracil (U - vòng đơn 6 cạnh Pyrimidine thay thế cho Thymine trong RNA, không có nhóm -CH₃ ở C5) bắt cặp bổ sung với Adenine (A) của mạch khuôn DNA trong quá trình phiên mã.'
   }
 };
 
 export const DNA_VS_MRNA_COMPARISON_ROWS = [
   {
-    criterion: '1. Số mạch polinucleotide',
+    criterion: '1. Số mạch polynucleotide',
     dnaValue: '2 mạch xoắn kép song song ngược chiều (5\'→3\' và 3\'→5\')',
     mrnaValue: '1 mạch đơn duy nhất có chiều 5\' → 3\''
   },
   {
-    criterion: '2. Đường Pentozơ (5C)',
-    dnaValue: 'Đường Deoxyribose (C₅H₁₀O₄ — thiếu 1 nguyên tử Oxy ở C2\')',
+    criterion: '2. Đường pentose (5C)',
+    dnaValue: 'Đường Deoxyribose (C₅H₁₀O₄ — thiếu 1 nguyên tử oxygen ở C2\')',
     mrnaValue: 'Đường Ribose (C₅H₁₀O₅ — có nhóm -OH tự do ở C2\')'
   },
   {
-    criterion: '3. 4 loại Bazơ Nitơ',
+    criterion: '3. 4 loại Base nitrogen',
     dnaValue: 'Adenine (A), Thymine (T), Guanine (G), Cytosine (C)',
     mrnaValue: 'Adenine (A), Uracil (U - thay cho T), Guanine (G), Cytosine (C)'
   },
   {
-    criterion: '4. Liên kết Hydro ngang',
-    dnaValue: 'Có hệ thống liên kết Hydro bền vững (A = T, G ≡ C)',
-    mrnaValue: 'Mạch đơn thẳng nên không có liên kết Hydro giữa 2 mạch'
+    criterion: '4. Liên kết hydrogen ngang',
+    dnaValue: 'Có hệ thống liên kết hydrogen bền vững (A = T, G ≡ C)',
+    mrnaValue: 'Chỉ có 1 mạch nên không có liên kết hydrogen giữa 2 mạch'
   },
   {
-    criterion: '5. Kích thước & Độ bền',
-    dnaValue: 'Đường kính 20 Å, rất lớn và bền vững trong nhân tế bào',
-    mrnaValue: 'Đường kính ~10 Å, ngắn hơn, dễ bị phân hủy sau khi dịch mã'
+    criterion: '5. Kích thước & độ bền',
+    dnaValue: 'Đường kính 20 Å, kích thước lớn, bền vững, được bảo quản trong nhân tế bào',
+    mrnaValue: 'Mạch đơn, ngắn hơn nhiều, kém bền, bị phân giải sau khi dịch mã'
   }
 ];
 
@@ -211,9 +216,9 @@ export const HIGH_SCHOOL_PRESETS: HighSchoolLessonPreset[] = [
     badge: 'Đột biến bậc #5',
     sequenceStrand1: 'ATGCGCGCAT',
     description:
-      'So với mẫu chuẩn, bậc thang số 5 được thay thế từ cặp A=T (2 liên kết Hydro) sang cặp G≡C (3 liên kết Hydro). Chiều dài 34 Å không đổi nhưng tổng số liên kết Hydro tăng thêm!',
+      'So với mẫu chuẩn, bậc thang số 5 được thay thế từ cặp A=T (2 liên kết hydrogen) sang cặp G≡C (3 liên kết hydrogen). Chiều dài 34 Å không đổi nhưng tổng số liên kết hydrogen tăng thêm!',
     keyTakeaway:
-      'Thay thế 1 cặp A-T bằng 1 cặp G-C: Chiều dài DNA giữ nguyên, tổng số liên kết Hydro (H = 2A + 3G) tăng thêm 1.'
+      'Thay thế 1 cặp A-T bằng 1 cặp G-C: Chiều dài DNA giữ nguyên, tổng số liên kết hydrogen (H = 2A + 3G) tăng thêm 1.'
   }
 ];
 
@@ -237,7 +242,7 @@ export const HIGH_SCHOOL_GESTURE_IDEAS: BioInteractionIdea[] = [
     subtitle: 'Mở rộng Ngón Cái & Ngón Trỏ để Phóng To — Chụm sát 2 ngón để Thu Nhỏ',
     gestureIcon: '👌',
     gestureTrigger: 'Dùng Ngón Cái + Ngón Trỏ mở ra / khép lại (không phụ thuộc cự ly bàn tay)',
-    highSchoolTopic: 'Phóng to vào sát liên kết Hydro & vòng phân tử Đường - Photphat',
+    highSchoolTopic: 'Phóng to vào sát liên kết hydrogen & vòng phân tử Đường - phosphate',
     scientificApplication:
       'Hệ thống chuẩn hóa tỷ lệ khoảng cách giữa đầu Ngón Cái (#4) và đầu Ngón Trỏ (#8) theo kích thước lòng bàn tay, giúp bạn Zoom ra/vào mượt mà mà không bị nhảy hình khi đưa tay gần hay xa camera.',
     presetId: 'WC_1_TURN',
@@ -252,7 +257,7 @@ export const HIGH_SCHOOL_GESTURE_IDEAS: BioInteractionIdea[] = [
     gestureTrigger: 'Nắm 4 ngón và giơ ngón tay cái hướng lên (Thumbs-up)',
     highSchoolTopic: 'Mô phỏng quá trình tự nhân đôi DNA & giải phẫu đơn phân Nucleotide',
     scientificApplication:
-      'Ở tab DNA, ngón cái (👍) cắt đứt liên kết Hydro tách 2 mạch đơn. Ở tab Cấu trúc Nucleotide, ngón cái (👍) tách rời Nhóm Photphat (-PO₄³⁻), Đường Pentozơ (5C) và Bazơ Nitơ để thấy rõ các vị trí liên kết C1\' và C5\'.',
+      'Ở tab DNA, ngón cái (👍) cắt đứt liên kết hydrogen tách 2 mạch đơn. Ở tab Cấu trúc Nucleotide, ngón cái (👍) tách rời Nhóm phosphate (-PO₄³⁻), Đường pentose (5C) và Base nitrogen để thấy rõ các vị trí liên kết C1\' và C5\'.',
     presetId: 'WC_1_TURN',
     targetTab: 'NUCLEOTIDE_STRUCTURE',
     demoAction: 'THUMBS_UP_UNZIP'
@@ -265,7 +270,7 @@ export const HIGH_SCHOOL_GESTURE_IDEAS: BioInteractionIdea[] = [
     gestureTrigger: 'Giơ 2 ngón trỏ và ngón giữa tạo hình chữ V',
     highSchoolTopic: 'Quan sát tiết diện hình trụ tròn 20 Å & đối xứng tâm',
     scientificApplication:
-      'Giúp nhìn rõ hình trụ tròn đường kính 20 Å của trục xoắn kép DNA (so với bán kính mạch đơn 10 Å của mRNA) và vị trí các cặp base A=T, G≡C xếp đối xứng qua trục tâm.',
+      'Giúp nhìn rõ hình trụ tròn đường kính 20 Å của trục xoắn kép DNA (mRNA chỉ có 1 mạch đơn) và vị trí các cặp base A=T, G≡C xếp đối xứng qua trục tâm.',
     presetId: 'WC_1_TURN',
     targetTab: 'DNA_VS_MRNA',
     demoAction: 'PEACE_TOP_DOWN'
@@ -291,7 +296,7 @@ export const HIGH_SCHOOL_GESTURE_IDEAS: BioInteractionIdea[] = [
     gestureTrigger: 'Duỗi 1 ngón trỏ (👉, khép ngón cái) chỉ vào chi tiết trên mô hình',
     highSchoolTopic: 'Tra cứu tức thì công thức phân tử (A, T, G, C, Uracil, Deoxyribose, Ribose)',
     scientificApplication:
-      'Tia định vị từ đầu ngón trỏ bắt dính vào từng nguyên tử/bậc thang trên cả 4 tab, hiển thị thẻ thông số công thức hóa học, phân nhóm Purin/Pirimiđin và liên kết Hydro.',
+      'Tia định vị từ đầu ngón trỏ bắt dính vào từng nguyên tử/bậc thang trên cả 4 tab, hiển thị thẻ thông số công thức hóa học, phân nhóm Purine/Pyrimidine và liên kết hydrogen.',
     presetId: 'WC_1_TURN',
     targetTab: 'DNA_VS_MRNA',
     demoAction: 'POINT_INSPECT_DEMO'

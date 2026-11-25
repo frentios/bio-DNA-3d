@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   MolecularLayerVisibility,
   HandCameraOrientation,
@@ -23,9 +24,9 @@ import { HandTrackerOverlay, SimulatedGestureAction } from './components/HandTra
 import { ProposalAdvisorSection } from './components/ProposalAdvisorModal';
 import {
   Dna,
-  Eye,
-  EyeOff,
   RotateCcw,
+  ScanLine,
+  ZoomIn,
   Sparkles,
   SplitSquareHorizontal,
   Compass,
@@ -167,7 +168,9 @@ export function App() {
     setTelemetry(output.telemetry);
     setCameraWristEuler(output.targetWristEuler);
     setInertiaImpulse(output.inertiaImpulse);
-    setHandZoomFactor(output.targetZoomFactor);
+    if (output.targetZoomFactor !== null) {
+      setHandZoomFactor(output.targetZoomFactor);
+    }
 
     if (output.targetUnzipFactor !== null) {
       setExplosionFactor((prev) => prev + (output.targetUnzipFactor! - prev) * 0.16);
@@ -381,149 +384,272 @@ export function App() {
     }
   };
 
+  const rangeStyle = (value: number, min: number, max: number, color: string) =>
+    ({
+      '--range-fill': `${((value - min) / (max - min)) * 100}%`,
+      '--range-color': color
+    }) as React.CSSProperties;
+
+  const layerItems = [
+    {
+      key: 'sgkRuler3D' as const,
+      label: 'Trục tâm & thước đo 34 Å',
+      sub: 'Trục giữa và nhãn định danh mô hình',
+      dot: '#22d3ee'
+    },
+    {
+      key: 'baseLabels3D' as const,
+      label: 'Nhãn A, T, G, C, U & nguyên tử',
+      sub: "Nhận biết nhanh từng nucleotide và vị trí C1'→C5'",
+      dot: '#34d399'
+    },
+    {
+      key: 'backbone' as const,
+      label: 'Khung đường pentose – phosphate',
+      sub: "Dải xoắn 5'→3' hoặc cụm nguyên tử P – O – đường 5C",
+      dot: '#38bdf8'
+    },
+    {
+      key: 'hydrogenBonds' as const,
+      label: 'Liên kết hydrogen & glycosidic',
+      sub: '👌 để phóng to, 👍 để tháo xoắn',
+      dot: '#fbbf24'
+    }
+  ];
+
+  const quickViews = [
+    { id: 'FRONT_HELIX', label: 'Chính diện', icon: '✋', wrist: { pitch: 0, yaw: 0, roll: 0 } },
+    { id: 'TOP_AXIS', label: 'Nhìn từ đỉnh', icon: '✌️', wrist: { pitch: 90, yaw: 0, roll: 0 } },
+    { id: 'SINGLE_TURN_34A', label: 'Nghiêng 3 trục', icon: '✋', wrist: { pitch: 20, yaw: 35, roll: -14 } },
+    { id: 'BASE_PAIR_ZOOM', label: 'Sát liên kết', icon: '👌', wrist: { pitch: 12, yaw: 18, roll: 0 } }
+  ];
+
+  const statCards = [
+    {
+      label: 'Tổng số nucleotide',
+      formula: 'N = 2A + 2G',
+      value: stats.totalNucleotides,
+      unit: `nu · ${stats.totalPairs} cặp`,
+      color: 'text-white',
+      glow: 'from-slate-400/20'
+    },
+    {
+      label: 'Chiều dài',
+      formula: 'L = N/2 × 3,4',
+      value: stats.lengthAngstrom,
+      unit: 'Å',
+      color: 'text-cyan-300',
+      glow: 'from-cyan-400/25'
+    },
+    {
+      label: 'Liên kết hydrogen',
+      formula: 'H = 2A + 3G',
+      value: stats.hydrogenBondsTotal,
+      unit: 'liên kết',
+      color: 'text-amber-300',
+      glow: 'from-amber-400/25'
+    },
+    {
+      label: 'Số chu kỳ xoắn',
+      formula: 'C = N/20',
+      value: stats.helicalTurns,
+      unit: 'vòng',
+      color: 'text-emerald-300',
+      glow: 'from-emerald-400/25'
+    }
+  ];
+
   return (
-    <div className="min-h-screen bg-[#0B0F19] text-slate-100 flex flex-col">
-      {/* Top Bar Contract: 1-row, 3 zones separated by gap-8 */}
-      <header className="flex items-center justify-between gap-8 px-6 py-3.5 border-b border-slate-800/90 bg-[#0B0F19]/95 sticky top-0 z-40 backdrop-blur-md">
-        <a
-          href="#workbench"
-          className="text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0"
-        >
-          BioMotion 3D
-        </a>
+    <div className="min-h-screen text-slate-100 flex flex-col">
+      <div className="app-backdrop" aria-hidden>
+        <div className="orb w-[420px] h-[420px] bg-cyan-500 -top-32 -left-24" />
+        <div
+          className="orb w-[380px] h-[380px] bg-violet-600 top-40 -right-32"
+          style={{ animationDelay: '-6s' }}
+        />
+        <div
+          className="orb w-[360px] h-[360px] bg-emerald-500 bottom-[-120px] left-1/3"
+          style={{ animationDelay: '-11s' }}
+        />
+      </div>
 
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
-          <button
-            onClick={() => setActiveTab('WATSON_CRICK_DNA')}
-            className={`hover:text-cyan-400 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              activeTab === 'WATSON_CRICK_DNA' ? 'text-cyan-400 font-semibold' : ''
-            }`}
-          >
-            DNA Watson-Crick
-          </button>
-          <button
-            onClick={() => setActiveTab('MOLECULAR_DNA')}
-            className={`hover:text-cyan-400 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              activeTab === 'MOLECULAR_DNA' ? 'text-cyan-400 font-semibold' : ''
-            }`}
-          >
-            DNA Dạng Phân Tử
-          </button>
-          <button
-            onClick={() => setActiveTab('NUCLEOTIDE_STRUCTURE')}
-            className={`hover:text-cyan-400 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              activeTab === 'NUCLEOTIDE_STRUCTURE' ? 'text-cyan-400 font-semibold' : ''
-            }`}
-          >
-            Cấu Trúc Nucleotide
-          </button>
-          <button
-            onClick={() => setActiveTab('DNA_VS_MRNA')}
-            className={`hover:text-cyan-400 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              activeTab === 'DNA_VS_MRNA' ? 'text-cyan-400 font-semibold' : ''
-            }`}
-          >
-            So Sánh DNA & mRNA
-          </button>
-        </nav>
+      {/* ============================== HEADER ============================== */}
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-ink-950/70 backdrop-blur-xl">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-6 px-4 sm:px-6 py-3">
+          <a href="#workbench" className="flex items-center gap-3 shrink-0 group">
+            <span className="relative grid place-items-center w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 via-violet-500 to-emerald-400 shadow-lg shadow-cyan-500/30">
+              <Dna className="w-5 h-5 text-white transition-transform duration-700 group-hover:rotate-180" />
+            </span>
+            <span className="leading-tight">
+              <span className="block text-base font-extrabold tracking-tight text-white">
+                BioMotion <span className="text-gradient">3D</span>
+              </span>
+              <span className="block text-[11px] text-slate-400">Sinh học 10 · Kết nối tri thức</span>
+            </span>
+          </a>
 
-        <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            onClick={toggleFullScreen}
-            className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/40 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span>Tràn Màn Hình 3D</span>
-          </button>
+          <nav className="hidden lg:flex items-center gap-1 p-1 rounded-full bg-white/[0.04] border border-white/10">
+            {MODEL_TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setExplosionFactor(0);
+                    setFocusedStepIndex(null);
+                  }}
+                  className={`relative px-4 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors ${
+                    isActive ? 'text-ink-950' : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  {isActive && (
+                    <motion.span
+                      layoutId="nav-pill"
+                      className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-300 to-emerald-300"
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center gap-1.5">
+                    {getTabIcon(tab.id)}
+                    {tab.navLabel}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
 
-          <button
-            onClick={() => setArPassthrough((prev) => !prev)}
-            className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              arPassthrough
-                ? 'bg-amber-400 text-slate-950 hover:bg-amber-300'
-                : 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
-            }`}
-          >
-            {arPassthrough ? 'Thoát AR Camera' : 'Đặt Lên Bàn Học (AR)'}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={toggleFullScreen} className="btn btn-ghost hidden sm:inline-flex">
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>Toàn màn hình</span>
+            </button>
+            <button
+              onClick={() => setArPassthrough((prev) => !prev)}
+              className={`btn ${arPassthrough ? 'btn-warm' : 'btn-primary'}`}
+            >
+              <ScanLine className="w-3.5 h-3.5" />
+              <span>{arPassthrough ? 'Thoát AR' : 'Đặt lên bàn (AR)'}</span>
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* 4 Model Tabs Bar + Sequence Preset Selector */}
-      <div
-        id="workbench"
-        className="border-b border-slate-800/80 bg-[#0F1626] px-6 py-3 flex flex-col xl:flex-row xl:items-center justify-between gap-3"
-      >
-        {/* 4 Interactive Model Tabs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 flex-1">
-          {MODEL_TABS.map((tab) => {
+      {/* ============================== HERO ============================== */}
+      <section className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 pt-8 pb-5">
+        <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6">
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+            className="max-w-3xl space-y-3"
+          >
+            <div className="eyebrow flex items-center gap-2">
+              <span className="live-dot" />
+              Bài 5 · Các phân tử sinh học · Nucleic acid
+            </div>
+            <h1 className="text-3xl sm:text-4xl xl:text-[44px] font-extrabold tracking-tight leading-[1.1] text-white text-balance">
+              Cầm phân tử <span className="text-gradient">DNA</span> trên tay — xoay, tách mạch
+              và khám phá bằng cử chỉ
+            </h1>
+            <p className="text-sm sm:text-[15px] text-slate-300/90 leading-relaxed max-w-2xl">
+              Bốn mô hình 3D bám sát sách giáo khoa: chuỗi xoắn kép Watson – Crick, cấu trúc nguyên
+              tử, đơn phân nucleotide và so sánh DNA với mRNA. Bật camera để điều khiển bằng bàn tay,
+              hoặc dùng chuột và thanh trượt.
+            </p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.1, ease: 'easeOut' }}
+            className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 shrink-0"
+          >
+            {[
+              { v: '20 Å', l: 'Đường kính' },
+              { v: '34 Å', l: '1 chu kỳ xoắn' },
+              { v: '10', l: 'cặp nu / chu kỳ' },
+              { v: '3,4 Å', l: 'giữa 2 cặp nu' }
+            ].map((s) => (
+              <div key={s.l} className="panel px-4 py-3 min-w-[110px]">
+                <div className="text-xl font-bold font-mono text-white">{s.v}</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">{s.l}</div>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ============================== MODEL TABS ============================== */}
+      <div id="workbench" className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 space-y-3 scroll-mt-20">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          {MODEL_TABS.map((tab, i) => {
             const isActive = activeTab === tab.id;
             return (
-              <button
+              <motion.button
                 key={tab.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05 * i + 0.15 }}
+                whileHover={{ y: -2 }}
                 onClick={() => {
                   setActiveTab(tab.id);
                   setExplosionFactor(0);
                   setFocusedStepIndex(null);
                 }}
-                className={`px-3.5 py-2.5 rounded-lg border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
-                  isActive
-                    ? 'bg-cyan-500/15 border-cyan-400 text-white shadow-sm'
-                    : 'bg-slate-950/75 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                className={`panel text-left p-4 flex items-start gap-3 cursor-pointer transition-colors ${
+                  isActive ? 'panel-accent' : 'hover:border-white/20'
                 }`}
               >
                 <span
-                  className={`mt-0.5 p-1.5 rounded-md shrink-0 ${
-                    isActive ? 'bg-cyan-400 text-slate-950' : 'bg-slate-900 text-cyan-400'
+                  className={`grid place-items-center w-10 h-10 rounded-xl shrink-0 transition-colors ${
+                    isActive
+                      ? 'bg-gradient-to-br from-cyan-300 to-emerald-300 text-ink-950'
+                      : 'bg-white/5 text-cyan-300'
                   }`}
                 >
                   {getTabIcon(tab.id)}
                 </span>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`text-xs font-bold truncate ${
-                        isActive ? 'text-cyan-300' : 'text-slate-100'
-                      }`}
-                    >
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] text-slate-500">0{i + 1}</span>
+                    <span className={`text-sm font-bold ${isActive ? 'text-white' : 'text-slate-200'}`}>
                       {tab.shortTitle}
                     </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 truncate mt-0.5">{tab.badge}</p>
-                </div>
-              </button>
+                  </span>
+                  <span className="hidden sm:block text-[11.5px] text-slate-400 mt-1 leading-snug line-clamp-2">
+                    {tab.summary}
+                  </span>
+                </span>
+              </motion.button>
             );
           })}
         </div>
 
-        {/* Sequence Presets (for DNA & mRNA tabs) */}
         {activeTab !== 'NUCLEOTIDE_STRUCTURE' && (
-          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-            <span className="text-[11px] font-mono text-slate-400 mr-1 flex items-center gap-1">
-              <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Mẫu gen:</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="eyebrow flex items-center gap-1.5 mr-1">
+              <BookOpen className="w-3.5 h-3.5" />
+              Đoạn gen mẫu
             </span>
             {HIGH_SCHOOL_PRESETS.map((preset) => (
               <button
                 key={preset.id}
                 onClick={() => handleSelectPreset(preset.id)}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  activePresetId === preset.id
-                    ? 'bg-cyan-500 text-slate-950 font-semibold'
-                    : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
-                }`}
+                className={`chip ${activePresetId === preset.id ? 'chip-active' : ''}`}
               >
                 {preset.badge}
               </button>
             ))}
+            {activePresetId === 'CUSTOM' && <span className="chip chip-active">Tự nhập</span>}
           </div>
         )}
       </div>
 
-      {/* Main 3-Column Interactive Workspace */}
-      <main className="flex-1 max-w-[1600px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4 p-4">
-        {/* LEFT COLUMN (3 cols): 6-Gesture Camera + 3-Axis Palm Gimbal + Unzipping & View Angles */}
-        <aside className="lg:col-span-3 space-y-4 flex flex-col">
+      {/* ============================== WORKSPACE ============================== */}
+      <main className="flex-1 max-w-[1600px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 sm:px-6">
+        {/* ---------- LEFT: camera + điều khiển ---------- */}
+        <aside className="lg:col-span-3 space-y-4 flex flex-col order-2 lg:order-1">
           <HandTrackerOverlay
             onGestureFrame={handleGestureFrame}
             onVideoStreamChange={setVideoStream}
@@ -537,19 +663,16 @@ export function App() {
             telemetry={telemetry}
           />
 
-          {/* 👍 Thumbs-Up Unzipping / Nucleotide Separation & 👌 Thumb-Index Zoom Slider */}
-          <div className="bg-[#111827] border border-slate-800 rounded-lg p-3.5 space-y-3.5">
-            <div className="space-y-1.5">
+          <div className="panel p-4 space-y-5">
+            <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-200 font-semibold flex items-center gap-1.5">
+                <span className="text-slate-100 font-semibold flex items-center gap-2">
                   <SplitSquareHorizontal className="w-4 h-4 text-orange-400" />
-                  <span>
-                    {activeTab === 'NUCLEOTIDE_STRUCTURE'
-                      ? '👍 Tách 3 Thành Phần Nucleotide'
-                      : '👍 Tháo Xoắn / Tách Đôi 2 Mạch Đơn'}
-                  </span>
+                  {activeTab === 'NUCLEOTIDE_STRUCTURE'
+                    ? 'Tách 3 thành phần nucleotide'
+                    : 'Tháo xoắn · tách 2 mạch đơn'}
                 </span>
-                <span className="font-mono tabular-nums text-orange-300 font-bold">
+                <span className="font-mono text-orange-300 font-bold">
                   {Math.round(explosionFactor * 100)}%
                 </span>
               </div>
@@ -560,23 +683,25 @@ export function App() {
                 step={0.01}
                 value={explosionFactor}
                 onChange={(e) => setExplosionFactor(parseFloat(e.target.value))}
-                className="w-full accent-orange-400 cursor-pointer h-2 bg-slate-950 rounded-lg"
+                className="range"
+                style={rangeStyle(explosionFactor, 0, 1, '#fb923c')}
+                aria-label="Mức tách mạch"
               />
-              <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                <span>0% (Nguyên vẹn)</span>
-                <span>50% (Bắt đầu tách)</span>
-                <span>100% (Tách rời hoàn toàn)</span>
+              <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                <span>Nguyên vẹn</span>
+                <span>Bắt đầu tách</span>
+                <span>Tách rời</span>
               </div>
             </div>
 
-            {/* 👌 Manual / Simulated Thumb-Index Span Zoom Slider */}
-            <div className="pt-2.5 border-t border-slate-800 space-y-1.5">
+            <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-200 font-semibold">
-                  👌 Độ Phóng Đại (Khoảng Cách Cái + Trỏ):
+                <span className="text-slate-100 font-semibold flex items-center gap-2">
+                  <ZoomIn className="w-4 h-4 text-amber-400" />
+                  Độ phóng đại
                 </span>
                 <span className="font-mono text-amber-300 font-bold">
-                  {(handZoomFactor || 1.0).toFixed(2)}x
+                  {(handZoomFactor || 1.0).toFixed(2)}×
                 </span>
               </div>
               <input
@@ -590,445 +715,469 @@ export function App() {
                   setHandZoomFactor(val);
                   setTelemetry((prev) => ({ ...prev, zoomLevelNormalized: val }));
                 }}
-                className="w-full accent-amber-400 cursor-pointer h-2 bg-slate-950 rounded-lg"
+                className="range"
+                style={rangeStyle(handZoomFactor || 1.0, 0.55, 2.45, '#fbbf24')}
+                aria-label="Độ phóng đại"
               />
-              <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                <span>0.55x (Chụm 2 ngón)</span>
-                <span>1.0x (Chuẩn)</span>
-                <span>2.45x (Mở rộng 2 ngón)</span>
+              <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                <span>0,55× chụm</span>
+                <span>1× chuẩn</span>
+                <span>2,45× mở</span>
               </div>
             </div>
 
-            <div className="pt-2.5 border-t border-slate-800 space-y-2">
+            <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-slate-100 flex items-center gap-2">
                   <Compass className="w-4 h-4 text-cyan-400" />
-                  <span>Góc Nhìn Nhanh (✋ / ✌️ / 👌)</span>
+                  Góc nhìn nhanh
                 </span>
                 <button
                   onClick={() => setAutoRotate((prev) => !prev)}
-                  className={`text-[11px] font-mono px-2 py-0.5 rounded border cursor-pointer ${
-                    autoRotate
-                      ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
-                      : 'border-slate-700 text-slate-400'
-                  }`}
+                  className={`chip !py-0.5 !text-[11px] ${autoRotate ? 'chip-active' : ''}`}
                 >
-                  {autoRotate ? 'Tự xoay: BẬT' : 'Đồng bộ tay 1:1'}
+                  {autoRotate ? '⟳ Tự xoay' : 'Đồng bộ tay'}
                 </button>
               </div>
-
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  {
-                    id: 'FRONT_HELIX',
-                    label: '✋ Đặt Thẳng Chính Diện',
-                    wrist: { pitch: 0, yaw: 0, roll: 0 }
-                  },
-                  {
-                    id: 'TOP_AXIS',
-                    label: '✌️ Nhìn Từ Đỉnh (Chữ V)',
-                    wrist: { pitch: 90, yaw: 0, roll: 0 }
-                  },
-                  {
-                    id: 'SINGLE_TURN_34A',
-                    label: '✋ Nghiêng Tay 3 Trục',
-                    wrist: { pitch: 20, yaw: 35, roll: -14 }
-                  },
-                  {
-                    id: 'BASE_PAIR_ZOOM',
-                    label: '👌 Zoom Sát Liên Kết',
-                    wrist: { pitch: 12, yaw: 18, roll: 0 }
-                  }
-                ].map((view) => (
-                  <button
-                    key={view.id}
-                    onClick={() => {
-                      setAutoRotate(false);
-                      setUseVirtualWrist(true);
-                      setVirtualWristDeg(view.wrist);
-                      setCameraOrientation(view.id as HandCameraOrientation);
-                    }}
-                    className={`px-2.5 py-1.5 rounded text-[11px] font-medium text-left transition-colors whitespace-nowrap truncate cursor-pointer ${
-                      cameraOrientation === view.id
-                        ? 'bg-cyan-500 text-slate-950 font-semibold'
-                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
-                    }`}
-                  >
-                    {view.label}
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 gap-2">
+                {quickViews.map((view) => {
+                  const active = cameraOrientation === view.id;
+                  return (
+                    <button
+                      key={view.id}
+                      onClick={() => {
+                        setAutoRotate(false);
+                        setUseVirtualWrist(true);
+                        setVirtualWristDeg(view.wrist);
+                        setCameraOrientation(view.id as HandCameraOrientation);
+                      }}
+                      className={`rounded-xl px-3 py-2 text-left text-xs font-medium cursor-pointer transition-all border ${
+                        active
+                          ? 'bg-cyan-400/15 border-cyan-400/60 text-white'
+                          : 'bg-white/[0.03] border-white/10 text-slate-300 hover:border-white/25 hover:text-white'
+                      }`}
+                    >
+                      <span className="mr-1.5">{view.icon}</span>
+                      {view.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
         </aside>
 
-        {/* CENTER VIEWPORT (6 cols): 3D Viewport (Supports Full-Screen Expansion!) + Contextual Panel */}
-        <section className="lg:col-span-6 flex flex-col gap-3">
+        {/* ---------- CENTER: viewport 3D ---------- */}
+        <section className="lg:col-span-6 flex flex-col gap-4 order-1 lg:order-2">
           <div
             className={
               isFullScreen
-                ? 'fixed inset-0 z-50 w-screen h-screen bg-[#070B14]'
-                : 'relative flex-1 min-h-[500px] lg:min-h-[560px] rounded-lg overflow-hidden border border-slate-800'
+                ? 'fixed inset-0 z-50 w-screen h-screen bg-ink-950'
+                : 'relative flex-1 min-h-[460px] sm:min-h-[540px] lg:min-h-[600px] rounded-2xl overflow-hidden p-px bg-gradient-to-br from-cyan-400/50 via-violet-500/30 to-emerald-400/40 shadow-2xl shadow-cyan-950/50'
             }
           >
-            <MolecularViewport3D
-              activeTab={activeTab}
-              selectedNucleotideBase={selectedNucleotideBase}
-              steps={steps}
-              layerVisibility={layerVisibility}
-              explosionFactor={explosionFactor}
-              cameraOrientation={cameraOrientation}
-              arPassthrough={arPassthrough}
-              videoStream={videoStream}
-              targetWristEuler={activeTargetWristEuler}
-              inertiaImpulse={inertiaImpulse}
-              handZoomFactor={handZoomFactor}
-              pointerScreenCoords={telemetry.indexTipScreen}
-              focusedStepIndex={focusedStepIndex}
-              autoRotate={autoRotate}
-              onSubunitHover={setHoveredInfo}
-              onSubunitSelect={(sub) => {
-                setSelectedSubunit(sub);
-                setFocusedStepIndex((prev) => (prev === sub.stepIndex ? null : sub.stepIndex));
-              }}
-              onManualRotationChange={(deg) => {
-                setUseVirtualWrist(false);
-                setVirtualWristDeg(deg);
-              }}
-            />
+            <div
+              className={
+                isFullScreen
+                  ? 'relative w-full h-full'
+                  : 'relative w-full h-full rounded-[15px] overflow-hidden bg-[radial-gradient(ellipse_at_center,#0f1a33_0%,#05070f_75%)]'
+              }
+            >
+              <MolecularViewport3D
+                activeTab={activeTab}
+                selectedNucleotideBase={selectedNucleotideBase}
+                steps={steps}
+                layerVisibility={layerVisibility}
+                explosionFactor={explosionFactor}
+                cameraOrientation={cameraOrientation}
+                arPassthrough={arPassthrough}
+                videoStream={videoStream}
+                targetWristEuler={activeTargetWristEuler}
+                inertiaImpulse={inertiaImpulse}
+                handZoomFactor={handZoomFactor}
+                pointerScreenCoords={telemetry.indexTipScreen}
+                focusedStepIndex={focusedStepIndex}
+                autoRotate={autoRotate}
+                onSubunitHover={setHoveredInfo}
+                onSubunitSelect={(sub) => {
+                  setSelectedSubunit(sub);
+                  setFocusedStepIndex((prev) => (prev === sub.stepIndex ? null : sub.stepIndex));
+                }}
+                onManualRotationChange={(deg) => {
+                  setUseVirtualWrist(false);
+                  setVirtualWristDeg(deg);
+                }}
+              />
 
-            <FloatingAtomOverlay
-              activeTab={activeTab}
-              onSelectTab={setActiveTab}
-              selectedNucleotideBase={selectedNucleotideBase}
-              onSelectNucleotideBase={setSelectedNucleotideBase}
-              hoveredInfo={hoveredInfo}
-              pointerScreen={telemetry.indexTipScreen}
-              thumbTipScreen={telemetry.thumbTipScreen}
-              zoomLevelNormalized={telemetry.zoomLevelNormalized}
-              activeGesture={telemetry.primaryGesture}
-              wristAnglesDeg={displayedWristAnglesDeg}
-              explosionFactor={explosionFactor}
-              arPassthrough={arPassthrough}
-              isFullScreen={isFullScreen}
-              onToggleFullScreen={toggleFullScreen}
-            />
+              <FloatingAtomOverlay
+                activeTab={activeTab}
+                onSelectTab={setActiveTab}
+                selectedNucleotideBase={selectedNucleotideBase}
+                onSelectNucleotideBase={setSelectedNucleotideBase}
+                hoveredInfo={hoveredInfo}
+                pointerScreen={telemetry.indexTipScreen}
+                thumbTipScreen={telemetry.thumbTipScreen}
+                zoomLevelNormalized={telemetry.zoomLevelNormalized}
+                activeGesture={telemetry.primaryGesture}
+                wristAnglesDeg={displayedWristAnglesDeg}
+                explosionFactor={explosionFactor}
+                arPassthrough={arPassthrough}
+                isFullScreen={isFullScreen}
+                onToggleFullScreen={toggleFullScreen}
+              />
+            </div>
           </div>
 
-          {/* Contextual Bottom Panel Based on Active Tab */}
-          {activeTab === 'NUCLEOTIDE_STRUCTURE' ? (
-            <div className="bg-[#111827] border border-slate-800 rounded-lg p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Hexagon className="w-4 h-4 text-cyan-400" />
-                  <span className="text-xs font-bold text-white">
-                    Cấu Tạo 3 Tiểu Phần Của 1 Đơn Phân Nucleotide (Chọn loại Bazơ để quan sát 3D):
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {(['A', 'T', 'G', 'C', 'U'] as NucleotideCode[]).map((base) => {
-                    const cfg = BASE_VISUAL_CONFIG[base];
-                    const active = selectedNucleotideBase === base;
-                    return (
-                      <button
-                        key={base}
-                        onClick={() => setSelectedNucleotideBase(base)}
-                        className={`px-2.5 py-1 rounded text-xs font-mono font-bold cursor-pointer transition-all ${
-                          active
-                            ? 'text-slate-950 scale-105'
-                            : 'bg-slate-950 text-slate-300 border border-slate-800 hover:border-slate-600'
-                        }`}
-                        style={active ? { backgroundColor: cfg.colorHex } : undefined}
-                      >
-                        {base === 'U' ? 'U (Uracil - RNA)' : `${base} (${cfg.englishName})`}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                <div className="bg-slate-950/90 border border-orange-500/30 rounded-md p-2.5 space-y-1">
-                  <div className="font-mono font-bold text-orange-300">
-                    ① Nhóm Photphat (-PO₄³⁻)
+          <AnimatePresence mode="wait">
+            {activeTab === 'NUCLEOTIDE_STRUCTURE' ? (
+              <motion.div
+                key="nuc-panel"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="panel p-4 space-y-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="eyebrow">Đơn phân của nucleic acid</div>
+                    <div className="text-sm font-bold text-white mt-0.5">
+                      Cấu tạo 1 nucleotide — chọn loại base nitrogen
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
-                    Gắn vào Carbon <strong>C5&apos;</strong> của đường qua liên kết este, nối với C3&apos;-OH của nu kế tiếp tạo khung xương.
-                  </p>
-                </div>
-                <div className="bg-slate-950/90 border border-cyan-500/30 rounded-md p-2.5 space-y-1">
-                  <div className="font-mono font-bold text-cyan-300">
-                    ② Đường Pentozơ 5 Carbon
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
-                    {selectedNucleotideBase === 'U'
-                      ? 'Đường Ribose (C₅H₁₀O₅): Có nhóm -OH ở C2\' (đặc trưng của mRNA).'
-                      : 'Đường Deoxyribose (C₅H₁₀O₄): Chỉ có -H ở C2\' (mất 1 Oxy nên bền vững).'}
-                  </p>
-                </div>
-                <div className="bg-slate-950/90 border border-emerald-500/30 rounded-md p-2.5 space-y-1">
-                  <div className="font-mono font-bold text-emerald-300">
-                    ③ Bazơ Nitơ ({selectedNucleotideBase} · {BASE_VISUAL_CONFIG[selectedNucleotideBase].nucleotideFormula})
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
-                    {BASE_VISUAL_CONFIG[selectedNucleotideBase].groupType}. Gắn với đường tại Carbon <strong>C1&apos;</strong>.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div
-              id="sequence-builder"
-              className="bg-[#111827] border border-slate-800 rounded-lg p-3.5 space-y-2.5"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Dna className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-bold text-white">
-                    {activeTab === 'DNA_VS_MRNA'
-                      ? 'Đối Chiếu Trình Tự 2 Mạch DNA & Mạch Đơn mRNA Phiên Mã (Thay T bằng U):'
-                      : 'Các Bậc Thang Bổ Sung (Bấm vào cột bất kỳ để đổi cặp A=T ↔ G≡C):'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={sequenceStrand1}
-                    onChange={(e) => {
-                      setSequenceStrand1(e.target.value);
-                      setActivePresetId('CUSTOM');
-                    }}
-                    placeholder="Nhập mạch 1 (A,T,G,C)..."
-                    maxLength={24}
-                    className="w-44 bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded px-2.5 py-1 text-xs font-mono text-white uppercase focus:outline-none"
-                  />
-                  <button
-                    onClick={() => handleCycleBaseAtStep(4)}
-                    className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded text-xs font-medium text-amber-300 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
-                  >
-                    <Wand2 className="w-3 h-3" />
-                    <span>Đổi bậc #5</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto pb-1">
-                <div className="inline-flex items-center gap-1.5 min-w-full">
-                  <div className="flex flex-col justify-between text-[11px] font-mono text-slate-400 pr-2 shrink-0 space-y-1">
-                    <span className="text-sky-400 font-semibold">DNA Mạch 1 (5&apos;→3&apos;):</span>
-                    <span className="text-slate-500 text-[10px]">Liên kết H:</span>
-                    <span className="text-purple-400 font-semibold">DNA Mạch gốc (3&apos;→5&apos;):</span>
-                    {activeTab === 'DNA_VS_MRNA' && (
-                      <span className="text-fuchsia-400 font-semibold pt-0.5">
-                        mRNA Phiên mã (5&apos;→3&apos;):
-                      </span>
-                    )}
-                  </div>
-
-                  {steps.map((step, idx) => {
-                    const cfg1 = BASE_VISUAL_CONFIG[step.strand1Base];
-                    const cfg2 = BASE_VISUAL_CONFIG[step.strand2Base];
-                    const cfgMrna = BASE_VISUAL_CONFIG[step.mrnaBase];
-                    const isHighlighted =
-                      hoveredInfo?.subunit.stepIndex === step.stepIndex ||
-                      mutatedStepIndex === step.stepIndex;
-
-                    return (
-                      <button
-                        key={step.stepIndex}
-                        onClick={() => handleCycleBaseAtStep(idx)}
-                        title={`Bậc ${step.stepIndex}: Bấm để đổi ${step.strand1Base}-${step.strand2Base}`}
-                        className={`flex flex-col items-center px-2 py-1.5 rounded-md border transition-transform cursor-pointer shrink-0 ${
-                          isHighlighted
-                            ? 'bg-slate-800 border-amber-400 scale-105'
-                            : 'bg-slate-950/90 border-slate-800 hover:border-slate-600'
-                        }`}
-                      >
-                        <span className="text-[9px] font-mono text-slate-500 mb-0.5">
-                          #{step.stepIndex}
-                        </span>
-                        <span
-                          className="w-6 h-6 rounded flex items-center justify-center text-xs font-mono font-bold text-slate-950"
-                          style={{ backgroundColor: cfg1.colorHex }}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(['A', 'T', 'G', 'C', 'U'] as NucleotideCode[]).map((base) => {
+                      const cfg = BASE_VISUAL_CONFIG[base];
+                      const active = selectedNucleotideBase === base;
+                      return (
+                        <button
+                          key={base}
+                          onClick={() => setSelectedNucleotideBase(base)}
+                          className={`chip font-mono ${active ? '!text-ink-950 font-bold' : ''}`}
+                          style={
+                            active
+                              ? { backgroundColor: cfg.colorHex, borderColor: 'transparent' }
+                              : { borderColor: `${cfg.colorHex}55` }
+                          }
                         >
-                          {step.strand1Base}
-                        </span>
-                        <span className="text-[10px] font-mono text-amber-300 my-0.5 font-bold">
-                          {step.hydrogenBonds === 2 ? '‖(2)' : '||| (3)'}
-                        </span>
-                        <span
-                          className="w-6 h-6 rounded flex items-center justify-center text-xs font-mono font-bold text-slate-950"
-                          style={{ backgroundColor: cfg2.colorHex }}
-                        >
-                          {step.strand2Base}
-                        </span>
-                        {activeTab === 'DNA_VS_MRNA' && (
                           <span
-                            className="w-6 h-6 mt-1 rounded flex items-center justify-center text-xs font-mono font-bold text-white border border-white/30"
-                            style={{ backgroundColor: cfgMrna.colorHex }}
-                          >
-                            {step.mrnaBase}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                            className="w-2 h-2 rounded-full"
+                            style={{ backgroundColor: active ? '#05070f' : cfg.colorHex }}
+                          />
+                          {base} · {cfg.englishName}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  {[
+                    {
+                      n: '①',
+                      title: 'Nhóm phosphate',
+                      color: 'text-orange-300',
+                      border: 'border-orange-400/30',
+                      body: (
+                        <>
+                          Gắn vào carbon <strong>C5&apos;</strong> của đường; nối với C3&apos;-OH của
+                          nucleotide kế tiếp bằng liên kết phosphodiester, tạo khung mạch.
+                        </>
+                      )
+                    },
+                    {
+                      n: '②',
+                      title: 'Đường pentose (5C)',
+                      color: 'text-cyan-300',
+                      border: 'border-cyan-400/30',
+                      body:
+                        selectedNucleotideBase === 'U'
+                          ? "Ribose (C₅H₁₀O₅): có nhóm -OH ở C2' — đặc trưng của RNA."
+                          : "Deoxyribose (C₅H₁₀O₄): chỉ có -H ở C2' (thiếu 1 oxygen) — đặc trưng của DNA."
+                    },
+                    {
+                      n: '③',
+                      title: `Base nitrogen ${selectedNucleotideBase}`,
+                      color: 'text-emerald-300',
+                      border: 'border-emerald-400/30',
+                      body: (
+                        <>
+                          {BASE_VISUAL_CONFIG[selectedNucleotideBase].groupType} ·{' '}
+                          <span className="font-mono">
+                            {BASE_VISUAL_CONFIG[selectedNucleotideBase].nucleotideFormula}
+                          </span>
+                          . Gắn với đường tại carbon <strong>C1&apos;</strong>.
+                        </>
+                      )
+                    }
+                  ].map((card) => (
+                    <div key={card.n} className={`panel-inset p-3 space-y-1.5 border ${card.border}`}>
+                      <div className={`font-bold ${card.color}`}>
+                        <span className="font-mono mr-1">{card.n}</span>
+                        {card.title}
+                      </div>
+                      <p className="text-[11.5px] text-slate-300 leading-relaxed">{card.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="seq-panel"
+                id="sequence-builder"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="panel p-4 space-y-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="eyebrow">
+                      {activeTab === 'DNA_VS_MRNA' ? 'Phiên mã' : 'Nguyên tắc bổ sung'}
+                    </div>
+                    <div className="text-sm font-bold text-white mt-0.5">
+                      {activeTab === 'DNA_VS_MRNA'
+                        ? 'Hai mạch DNA và mạch mRNA được phiên mã (T → U)'
+                        : 'Các cặp nucleotide — bấm vào một cột để đổi cặp'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={sequenceStrand1}
+                      onChange={(e) => {
+                        setSequenceStrand1(
+                          e.target.value.toUpperCase().replace(/X/g, 'C').replace(/[^ATGC]/g, '')
+                        );
+                        setActivePresetId('CUSTOM');
+                      }}
+                      placeholder="Nhập mạch 1 (A, T, G, C)…"
+                      maxLength={24}
+                      aria-label="Trình tự mạch 1"
+                      className="w-48 bg-ink-950/80 border border-white/10 focus:border-cyan-400/70 rounded-lg px-3 py-1.5 text-xs font-mono tracking-[0.15em] text-white uppercase focus:outline-none transition-colors"
+                    />
+                    <button
+                      onClick={() => handleCycleBaseAtStep(4)}
+                      className="btn btn-ghost !py-1.5 !text-amber-200 !border-amber-400/40"
+                    >
+                      <Wand2 className="w-3.5 h-3.5" />
+                      Đột biến cặp #5
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto pb-1 -mx-1 px-1">
+                  <div className="inline-flex items-stretch gap-1.5 min-w-full">
+                    <div className="flex flex-col justify-around text-[10.5px] font-mono pr-2 shrink-0 py-1.5">
+                      <span className="text-sky-300 font-semibold h-7 flex items-center">
+                        Mạch 1 (5&apos;→3&apos;)
+                      </span>
+                      <span className="text-slate-500 h-4 flex items-center">lk hydrogen</span>
+                      <span className="text-violet-300 font-semibold h-7 flex items-center">
+                        Mạch 2 (3&apos;→5&apos;)
+                      </span>
+                      {activeTab === 'DNA_VS_MRNA' && (
+                        <span className="text-fuchsia-300 font-semibold h-7 flex items-center mt-1">
+                          mRNA (5&apos;→3&apos;)
+                        </span>
+                      )}
+                    </div>
+
+                    {steps.map((step, idx) => {
+                      const cfg1 = BASE_VISUAL_CONFIG[step.strand1Base];
+                      const cfg2 = BASE_VISUAL_CONFIG[step.strand2Base];
+                      const cfgMrna = BASE_VISUAL_CONFIG[step.mrnaBase];
+                      const isHighlighted =
+                        hoveredInfo?.subunit.stepIndex === step.stepIndex ||
+                        mutatedStepIndex === step.stepIndex;
+
+                      return (
+                        <motion.button
+                          layout
+                          key={step.stepIndex}
+                          whileHover={{ y: -3 }}
+                          whileTap={{ scale: 0.94 }}
+                          onClick={() => handleCycleBaseAtStep(idx)}
+                          title={`Cặp ${step.stepIndex}: bấm để đổi ${step.strand1Base}-${step.strand2Base}`}
+                          className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl border cursor-pointer shrink-0 transition-colors ${
+                            isHighlighted
+                              ? 'bg-amber-400/10 border-amber-400/70'
+                              : 'bg-white/[0.03] border-white/10 hover:border-white/25'
+                          }`}
+                        >
+                          <span className="text-[9px] font-mono text-slate-500">#{step.stepIndex}</span>
+                          <span
+                            className="w-7 h-7 rounded-lg grid place-items-center text-xs font-mono font-bold text-ink-950 shadow-sm"
+                            style={{ backgroundColor: cfg1.colorHex, boxShadow: `0 0 12px ${cfg1.colorHex}55` }}
+                          >
+                            {step.strand1Base}
+                          </span>
+                          <span className="h-4 flex items-center gap-[2px]">
+                            {Array.from({ length: step.hydrogenBonds }).map((_, k) => (
+                              <span key={k} className="w-[2px] h-3 rounded bg-amber-300/80" />
+                            ))}
+                          </span>
+                          <span
+                            className="w-7 h-7 rounded-lg grid place-items-center text-xs font-mono font-bold text-ink-950 shadow-sm"
+                            style={{ backgroundColor: cfg2.colorHex, boxShadow: `0 0 12px ${cfg2.colorHex}55` }}
+                          >
+                            {step.strand2Base}
+                          </span>
+                          {activeTab === 'DNA_VS_MRNA' && (
+                            <span
+                              className="w-7 h-7 mt-1 rounded-lg grid place-items-center text-xs font-mono font-bold text-white ring-1 ring-white/30"
+                              style={{ backgroundColor: cfgMrna.colorHex }}
+                            >
+                              {step.mrnaBase}
+                            </span>
+                          )}
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </section>
 
-        {/* RIGHT COLUMN (3 cols): Contextual Comparison Table OR Formula Calculator + Layer Toggles + Pointed Card */}
-        <aside className="lg:col-span-3 space-y-4 flex flex-col">
-          {activeTab === 'DNA_VS_MRNA' ? (
-            <div className="bg-[#111827] border border-purple-500/40 rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-purple-300">
-                  <GitCompare className="w-4 h-4" />
-                  <span>BẢNG SO SÁNH TRỰC TIẾP DNA & mRNA</span>
+        {/* ---------- RIGHT: thông số + lớp + thẻ tra cứu ---------- */}
+        <aside className="lg:col-span-3 space-y-4 flex flex-col order-3">
+          <AnimatePresence mode="wait">
+            {activeTab === 'DNA_VS_MRNA' ? (
+              <motion.div
+                key="compare"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                className="panel panel-accent p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-bold text-white">
+                    <GitCompare className="w-4 h-4 text-violet-300" />
+                    So sánh DNA và mRNA
+                  </div>
+                  <span className="chip !cursor-default font-mono !text-violet-200 !border-violet-400/40">
+                    U = {stats.countMrnaU}
+                  </span>
                 </div>
-                <span className="text-[11px] font-mono text-emerald-300">
-                  U = {stats.countMrnaU} nu
-                </span>
-              </div>
-
-              <div className="space-y-2 text-xs">
-                {DNA_VS_MRNA_COMPARISON_ROWS.map((row) => (
-                  <div
-                    key={row.criterion}
-                    className="bg-slate-950/85 border border-slate-800 rounded-md p-2.5 space-y-1"
-                  >
-                    <div className="font-mono font-semibold text-slate-300 text-[11px]">
-                      {row.criterion}
+                <div className="space-y-2">
+                  {DNA_VS_MRNA_COMPARISON_ROWS.map((row) => (
+                    <div key={row.criterion} className="panel-inset p-3 space-y-1.5">
+                      <div className="text-[11px] font-semibold text-slate-200">{row.criterion}</div>
+                      <div className="grid grid-cols-[42px_1fr] gap-x-2 gap-y-1 text-[11.5px] leading-snug">
+                        <span className="font-mono font-bold text-sky-300">DNA</span>
+                        <span className="text-slate-300">{row.dnaValue}</span>
+                        <span className="font-mono font-bold text-violet-300">mRNA</span>
+                        <span className="text-slate-300">{row.mrnaValue}</span>
+                      </div>
                     </div>
-                    <div className="flex items-start justify-between gap-2 text-[11px]">
-                      <span className="text-sky-300">
-                        <strong>DNA:</strong> {row.dnaValue}
+                  ))}
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="stats"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                className="panel p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-bold text-white">
+                    <Calculator className="w-4 h-4 text-cyan-300" />
+                    Thông số đoạn DNA
+                  </div>
+                  <span className="chip !cursor-default !text-emerald-200 !border-emerald-400/40">
+                    {activePresetId === 'CUSTOM' ? 'Tự nhập' : activePreset.badge}
+                  </span>
+                </div>
+                {activePresetId !== 'CUSTOM' && (
+                  <p className="text-xs text-slate-400 leading-relaxed">{activePreset.description}</p>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  {statCards.map((c) => (
+                    <div
+                      key={c.label}
+                      className={`panel-inset p-3 relative overflow-hidden bg-gradient-to-br ${c.glow} to-transparent`}
+                    >
+                      <div className="text-[10.5px] text-slate-400">{c.label}</div>
+                      <motion.div
+                        key={String(c.value)}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`text-2xl font-mono font-bold mt-0.5 ${c.color}`}
+                      >
+                        {c.value}
+                      </motion.div>
+                      <div className="text-[10px] text-slate-500 flex justify-between gap-1">
+                        <span>{c.unit}</span>
+                        <span className="font-mono">{c.formula}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="panel-inset p-3 space-y-2 text-xs">
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-emerald-300 font-medium">A = T (2 lk hydrogen)</span>
+                      <span className="font-mono text-white">
+                        {stats.countA} cặp · {stats.percentAT}%
                       </span>
                     </div>
-                    <div className="flex items-start justify-between gap-2 text-[11px]">
-                      <span className="text-purple-300">
-                        <strong>mRNA:</strong> {row.mrnaValue}
-                      </span>
+                    <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-emerald-400 to-amber-400"
+                        animate={{ width: `${stats.percentAT * 2}%` }}
+                      />
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="bg-[#111827] border border-slate-800 rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-400">
-                  <Calculator className="w-4 h-4" />
-                  <span>THÔNG SỐ CẤU TRÚC PHÂN TỬ DNA</span>
-                </div>
-                <span className="text-[11px] font-mono text-emerald-400 font-semibold">
-                  {activePreset.badge}
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-300 leading-relaxed">{activePreset.description}</p>
-
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <div className="bg-slate-950/80 border border-slate-800/90 rounded-md p-2.5">
-                  <div className="text-[10px] font-mono text-slate-400">TỔNG SỐ NU (N = 2A + 2G)</div>
-                  <div className="text-xl font-mono font-bold text-white tabular-nums mt-0.5">
-                    {stats.totalNucleotides}{' '}
-                    <span className="text-xs font-normal text-slate-400">nu ({stats.totalPairs} cặp)</span>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-cyan-300 font-medium">G ≡ C (3 lk hydrogen)</span>
+                      <span className="font-mono text-white">
+                        {stats.countG} cặp · {stats.percentGC}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-cyan-400 to-rose-400"
+                        animate={{ width: `${stats.percentGC * 2}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between border-t border-white/5 pt-2 text-[11px]">
+                    <span className="text-slate-400">%A = %T · %G = %C · %A + %G = 50%</span>
+                  </div>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-400">Khối lượng (M = N × 300)</span>
+                    <span className="font-mono text-orange-300 font-semibold">
+                      {stats.molecularMassDvc.toLocaleString('vi-VN')} amu (đvC)
+                    </span>
                   </div>
                 </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-                <div className="bg-slate-950/80 border border-slate-800/90 rounded-md p-2.5">
-                  <div className="text-[10px] font-mono text-slate-400">CHIỀU DÀI (L = N/2 × 3,4)</div>
-                  <div className="text-xl font-mono font-bold text-cyan-400 tabular-nums mt-0.5">
-                    {stats.lengthAngstrom} <span className="text-xs font-normal text-slate-400">Å</span>
-                  </div>
-                </div>
-
-                <div className="bg-slate-950/80 border border-slate-800/90 rounded-md p-2.5">
-                  <div className="text-[10px] font-mono text-slate-400">LIÊN KẾT HYDRO (2A + 3G)</div>
-                  <div className="text-xl font-mono font-bold text-amber-400 tabular-nums mt-0.5">
-                    {stats.hydrogenBondsTotal}{' '}
-                    <span className="text-xs font-normal text-slate-400">liên kết</span>
-                  </div>
-                </div>
-
-                <div className="bg-slate-950/80 border border-slate-800/90 rounded-md p-2.5">
-                  <div className="text-[10px] font-mono text-slate-400">SỐ CHU KỲ XOẮN (C = N/20)</div>
-                  <div className="text-xl font-mono font-bold text-emerald-400 tabular-nums mt-0.5">
-                    {stats.helicalTurns}{' '}
-                    <span className="text-xs font-normal text-slate-400">vòng</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-slate-950/70 rounded-md p-2.5 border border-slate-800/80 space-y-1.5 text-xs font-mono">
-                <div className="flex justify-between">
-                  <span className="text-emerald-400">Số lượng A = T (2 lk H):</span>
-                  <span className="text-white font-semibold tabular-nums">
-                    {stats.countA} nu ({stats.percentAT}%)
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-cyan-400">Số lượng G ≡ C (3 lk H):</span>
-                  <span className="text-white font-semibold tabular-nums">
-                    {stats.countG} nu ({stats.percentGC}%)
-                  </span>
-                </div>
-                <div className="flex justify-between border-t border-slate-800/80 pt-1">
-                  <span className="text-slate-400">Khối lượng (M = N × 300):</span>
-                  <span className="text-orange-300 font-semibold tabular-nums">
-                    {stats.molecularMassDvc.toLocaleString('vi-VN')} đvC
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Toggle 3D Model Parts */}
-          <div className="bg-[#111827] border border-slate-800 rounded-lg p-4 space-y-2.5">
+          <div className="panel p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-fuchsia-400" />
-                <span>Bật / Tắt Lớp Cấu Trúc 3D</span>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Layers className="w-4 h-4 text-fuchsia-300" />
+                Lớp cấu trúc 3D
               </h3>
               <button
                 onClick={() => handleSimulateGesture('RESET')}
                 className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
               >
                 <RotateCcw className="w-3 h-3" />
-                <span>Mặc định</span>
+                Mặc định
               </button>
             </div>
 
             <div className="space-y-1.5">
-              {[
-                {
-                  key: 'sgkRuler3D' as const,
-                  label: 'Trục Tâm, Bảng Tên & Thước Đo 34 Å',
-                  sub: 'Hiển thị thanh trục giữa & nhãn định danh mô hình',
-                  color: 'text-cyan-300'
-                },
-                {
-                  key: 'baseLabels3D' as const,
-                  label: 'Nhãn Chữ Cái A, T, G, C, U & Nguyên Tử',
-                  sub: 'Giúp nhận biết nhanh từng loại nucleotide & vị trí C1\'→C5\'',
-                  color: 'text-emerald-300'
-                },
-                {
-                  key: 'backbone' as const,
-                  label: 'Khung Xương Đường Pentozơ - Photphat (-PO₄³⁻)',
-                  sub: 'Dải băng xoắn 5\'→3\' hoặc cụm nguyên tử P - O - Đường 5C',
-                  color: 'text-sky-300'
-                },
-                {
-                  key: 'hydrogenBonds' as const,
-                  label: 'Cầu Nối Liên Kết Hydro & Glycosidic',
-                  sub: 'Dùng Cái + Trỏ (👌) để Zoom sát hoặc 👍 để tháo xoắn',
-                  color: 'text-amber-300'
-                }
-              ].map((item) => {
+              {layerItems.map((item) => {
                 const active = layerVisibility[item.key];
                 return (
                   <button
@@ -1036,82 +1185,102 @@ export function App() {
                     onClick={() =>
                       setLayerVisibility((prev) => ({ ...prev, [item.key]: !prev[item.key] }))
                     }
-                    className={`w-full flex items-center justify-between p-2 rounded-md border text-left transition-colors cursor-pointer ${
+                    role="switch"
+                    aria-checked={active}
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       active
-                        ? 'bg-slate-900/95 border-slate-700 text-slate-100'
-                        : 'bg-slate-950/40 border-slate-800/60 text-slate-500'
+                        ? 'bg-white/[0.04] border-white/10'
+                        : 'bg-transparent border-white/5 opacity-55 hover:opacity-80'
                     }`}
                   >
-                    <div className="pr-2">
-                      <div className={`text-xs font-semibold ${active ? item.color : 'text-slate-500'}`}>
-                        {item.label}
-                      </div>
-                      <div className="text-[10px] text-slate-400">{item.sub}</div>
-                    </div>
-                    {active ? (
-                      <Eye className="w-4 h-4 text-cyan-400 shrink-0" />
-                    ) : (
-                      <EyeOff className="w-4 h-4 text-slate-600 shrink-0" />
-                    )}
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: item.dot, boxShadow: active ? `0 0 10px ${item.dot}` : 'none' }}
+                    />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-semibold text-slate-100">{item.label}</span>
+                      <span className="block text-[10.5px] text-slate-500 truncate">{item.sub}</span>
+                    </span>
+                    <span
+                      className={`relative w-8 h-[18px] rounded-full shrink-0 transition-colors ${
+                        active ? 'bg-cyan-400' : 'bg-white/10'
+                      }`}
+                    >
+                      <motion.span
+                        className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow"
+                        animate={{ left: active ? 16 : 2 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      />
+                    </span>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* 👉 Synchronized Explanation Card for Pointed / Selected Nucleotide (A, T, G, C, U + Chemical Formula) */}
-          <div className="bg-[#111827] border border-slate-800 rounded-lg p-4 space-y-2.5 flex-1">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-              <span className="text-xs font-mono text-emerald-400 font-semibold flex items-center gap-1">
+          <div className="panel p-4 space-y-3 flex-1">
+            <div className="flex items-center justify-between">
+              <span className="eyebrow flex items-center gap-1.5 !text-emerald-300">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>👉 THẺ THÔNG SỐ PHÂN TỬ ĐANG TRỎ</span>
+                Thẻ tra cứu
               </span>
-              <span className="text-xs font-mono text-slate-400">
-                Vị trí #{activeInspect.stepIndex}
-              </span>
+              <span className="text-[11px] font-mono text-slate-500">Vị trí #{activeInspect.stepIndex}</span>
             </div>
 
-            <div className="text-sm font-bold text-white">{activeInspect.titleVi}</div>
+            <div className="flex items-start gap-3">
+              <span
+                className="grid place-items-center w-11 h-11 rounded-xl text-lg font-mono font-extrabold text-ink-950 shrink-0"
+                style={{
+                  backgroundColor: BASE_VISUAL_CONFIG[activeInspect.baseCode]?.colorHex || '#38BDF8',
+                  boxShadow: `0 0 20px ${BASE_VISUAL_CONFIG[activeInspect.baseCode]?.colorHex || '#38BDF8'}66`
+                }}
+              >
+                {activeInspect.baseCode}
+              </span>
+              <div className="text-sm font-bold text-white leading-snug">{activeInspect.titleVi}</div>
+            </div>
 
-            <div className="space-y-1.5 text-xs bg-slate-950/80 p-2.5 rounded border border-slate-800">
-              <div className="flex justify-between gap-2">
-                <span className="text-slate-400 flex items-center gap-1 shrink-0">
+            <dl className="panel-inset p-3 space-y-2 text-xs">
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-400 flex items-center gap-1 shrink-0">
                   <FlaskConical className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Công thức:</span>
-                </span>
-                <span className="font-mono font-semibold text-cyan-300 text-right">
+                  Công thức
+                </dt>
+                <dd className="font-mono font-semibold text-cyan-200 text-right">
                   {activeInspect.chemicalFormula}
-                </span>
+                </dd>
               </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-slate-400 shrink-0">Liên kết Hydro:</span>
-                <span className="font-mono font-bold text-amber-300 text-right">
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-400 shrink-0">Liên kết hydrogen</dt>
+                <dd className="font-mono font-bold text-amber-300 text-right">
                   {activeInspect.hydrogenBondCount === 0
-                    ? `${activeInspect.baseCode} (Mạch đơn / Đơn phân)`
-                    : `${activeInspect.baseCode} ${
-                        activeInspect.hydrogenBondCount === 2 ? '= (2 lk Hydro)' : '≡ (3 lk Hydro)'
-                      } ${activeInspect.partnerBaseCode}`}
-                </span>
+                    ? `${activeInspect.baseCode} (mạch đơn / đơn phân)`
+                    : `${activeInspect.baseCode} ${activeInspect.hydrogenBondCount === 2 ? '=' : '≡'} ${
+                        activeInspect.partnerBaseCode
+                      } (${activeInspect.hydrogenBondCount} lk)`}
+                </dd>
               </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-slate-400 shrink-0">Phân nhóm:</span>
-                <span className="font-mono text-slate-200 text-right">
-                  {activeInspect.chemicalGroupVi}
-                </span>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-400 shrink-0">Phân nhóm</dt>
+                <dd className="text-slate-200 text-right">{activeInspect.chemicalGroupVi}</dd>
               </div>
-            </div>
+            </dl>
 
-            <p className="text-xs text-slate-300 pt-1 leading-relaxed">
-              {activeInspect.ntbsRuleVi}
-            </p>
+            <p className="text-xs text-slate-300 leading-relaxed">{activeInspect.ntbsRuleVi}</p>
           </div>
         </aside>
       </main>
 
       <ProposalAdvisorSection onSelectIdeaDemo={handleSelectIdeaDemo} />
 
-      <footer className="border-t border-slate-800/80 py-6 px-6 text-center text-xs text-slate-400">
-        BioMotion 3D · 4 Mô Hình Sinh Học Phân Tử 3D (DNA Watson-Crick · DNA Phân Tử · Đơn Phân Nucleotide · So Sánh DNA & mRNA) — Điều Khiển Bằng Cử Chỉ Bàn Tay Thời Gian Thực.
+      <footer className="border-t border-white/5 py-8 px-6 text-center space-y-1">
+        <div className="text-sm font-semibold text-slate-300">
+          BioMotion <span className="text-gradient">3D</span>
+        </div>
+        <p className="text-xs text-slate-500">
+          Mô hình DNA Watson – Crick · DNA dạng phân tử · Nucleotide · So sánh DNA & mRNA — thuật ngữ
+          theo SGK Sinh học 10, bộ Kết nối tri thức.
+        </p>
       </footer>
     </div>
   );

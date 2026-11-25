@@ -66,20 +66,25 @@ export const HandTrackerOverlay: React.FC<HandTrackerOverlayProps> = ({
     try {
       if (!handLandmarkerRef.current) {
         const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm'
         );
-        handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
+        const makeOptions = (delegate: 'GPU' | 'CPU') => ({
           baseOptions: {
             modelAssetPath:
               'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-            delegate: 'GPU'
+            delegate
           },
-          runningMode: 'VIDEO',
+          runningMode: 'VIDEO' as const,
           numHands: 1,
           minHandDetectionConfidence: 0.55,
           minHandPresenceConfidence: 0.55,
           minTrackingConfidence: 0.55
         });
+        try {
+          handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, makeOptions('GPU'));
+        } catch {
+          handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, makeOptions('CPU'));
+        }
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -114,6 +119,15 @@ export const HandTrackerOverlay: React.FC<HandTrackerOverlayProps> = ({
     onVideoStreamChange(null);
     setCameraActive(false);
   };
+
+  // Giải phóng camera khi component bị huỷ
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => {
+      const stream = video?.srcObject as MediaStream | null;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
   useEffect(() => {
     let rafId = 0;
@@ -215,50 +229,80 @@ export const HandTrackerOverlay: React.FC<HandTrackerOverlayProps> = ({
 
   const activeGestureMeta = GESTURE_LABELS_VI[telemetry.primaryGesture];
 
+  const rangeStyle = (value: number, min: number, max: number, color: string) =>
+    ({
+      '--range-fill': `${((value - min) / (max - min)) * 100}%`,
+      '--range-color': color
+    }) as React.CSSProperties;
+
+  const axes = [
+    { key: 'roll' as const, label: 'Nghiêng cổ tay', axis: 'Roll · Z', min: -90, max: 90, color: '#fbbf24' },
+    { key: 'pitch' as const, label: 'Úp / ngửa tay', axis: 'Pitch · X', min: -90, max: 90, color: '#34d399' },
+    { key: 'yaw' as const, label: 'Xoay lòng bàn tay', axis: 'Yaw · Y', min: -180, max: 180, color: '#22d3ee' }
+  ];
+
+  const simButtons: { id: SimulatedGestureAction; icon: string; label: string; ring: string }[] = [
+    { id: 'PALM_3D', icon: '✋', label: 'Xoè tay · xoay 3D', ring: 'hover:border-cyan-400/60' },
+    { id: 'PEACE_TOP', icon: '✌️', label: 'Chữ V · nhìn đỉnh', ring: 'hover:border-sky-400/60' },
+    { id: 'THUMBS_UP_UNZIP', icon: '👍', label: 'Ngón cái · tách', ring: 'hover:border-orange-400/60' },
+    { id: 'PINCH_ZOOM', icon: '👌', label: 'Cái + trỏ · zoom', ring: 'hover:border-amber-400/60' },
+    { id: 'FIST_INERTIA', icon: '✊', label: 'Nắm tay · quán tính', ring: 'hover:border-fuchsia-400/60' },
+    { id: 'POINT_INSPECT', icon: '👉', label: 'Ngón trỏ · tra cứu', ring: 'hover:border-emerald-400/60' }
+  ];
+
+  const gestureToSim: Partial<Record<string, SimulatedGestureAction>> = {
+    PALM_3D_ORIENTATION: 'PALM_3D',
+    PEACE_TOP_VIEW: 'PEACE_TOP',
+    THUMBS_UP_UNZIP: 'THUMBS_UP_UNZIP',
+    PINCH_ZOOM: 'PINCH_ZOOM',
+    FIST_INERTIA_GRAB: 'FIST_INERTIA',
+    POINT_INSPECT: 'POINT_INSPECT'
+  };
+  const activeSim = gestureToSim[telemetry.primaryGesture];
+
   return (
-    <div className="bg-[#111827] border border-slate-800 rounded-lg p-3.5 space-y-3">
+    <div className="panel p-4 space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Hand className="w-4 h-4 text-cyan-400 shrink-0" />
-          <h3 className="text-xs font-semibold text-slate-100">
-            6 Cử Chỉ Bàn Tay Cầm DNA (MediaPipe)
-          </h3>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="grid place-items-center w-8 h-8 rounded-lg bg-cyan-400/10 text-cyan-300 shrink-0">
+            <Hand className="w-4 h-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-white leading-tight">Điều khiển bằng tay</h3>
+            <p className="text-[11px] text-slate-400 truncate">6 cử chỉ · MediaPipe</p>
+          </div>
         </div>
         <button
           onClick={cameraActive ? stopCamera : initMediaPipeAndCamera}
           disabled={modelLoading}
-          className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-            cameraActive
-              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
-              : 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
-          }`}
+          className={`btn shrink-0 ${cameraActive ? 'btn-danger' : 'btn-primary'}`}
         >
           {modelLoading ? (
             <>
               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              <span>Đang nạp AI...</span>
+              Đang nạp…
             </>
           ) : cameraActive ? (
             <>
               <CameraOff className="w-3.5 h-3.5" />
-              <span>Tắt Camera</span>
+              Tắt
             </>
           ) : (
             <>
               <Camera className="w-3.5 h-3.5" />
-              <span>Bật Camera Cử Chỉ</span>
+              Bật camera
             </>
           )}
         </button>
       </div>
 
-      {/* Camera Preview Box */}
-      <div className="relative w-full aspect-[4/3] bg-slate-950 rounded-md overflow-hidden border border-slate-800/90">
+      {/* Khung camera */}
+      <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-white/10 bg-[radial-gradient(ellipse_at_center,#0f1a33,#05070f)]">
         <video
           ref={videoRef}
           playsInline
           muted
-          className={`w-full h-full object-cover scale-x-[-1] ${cameraActive ? 'opacity-75' : 'hidden'}`}
+          className={`w-full h-full object-cover scale-x-[-1] ${cameraActive ? 'opacity-80' : 'hidden'}`}
         />
         <canvas
           ref={canvasRef}
@@ -268,167 +312,125 @@ export const HandTrackerOverlay: React.FC<HandTrackerOverlayProps> = ({
         />
 
         {!cameraActive && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-            <Rotate3d className="w-7 h-7 text-cyan-400/75 mb-2" />
-            <p className="text-xs text-slate-200 font-medium">
-              Bấm &ldquo;Bật Camera Cử Chỉ&rdquo; để xoay 3D bằng lòng bàn tay & Zoom bằng khoảng cách Ngón Cái + Ngón Trỏ
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-5 text-center">
+            <div className="relative mb-3">
+              <span className="absolute inset-0 rounded-full bg-cyan-400/20 blur-xl" />
+              <span className="relative grid place-items-center w-14 h-14 rounded-full border border-cyan-400/40 bg-cyan-400/10 text-2xl">
+                ✋
+              </span>
+            </div>
+            <p className="text-xs text-slate-200 font-medium leading-relaxed">
+              Bật camera để xoay mô hình bằng lòng bàn tay và phóng to bằng ngón cái + ngón trỏ
             </p>
-            <p className="text-[11px] text-slate-400 mt-1">
-              Hoặc dùng thanh trượt Roll / Pitch / Yaw và 6 nút cử chỉ ngay bên dưới.
-            </p>
+            <p className="text-[11px] text-slate-500 mt-1">Hoặc dùng thanh trượt và nút mô phỏng bên dưới</p>
           </div>
         )}
 
-        {/* Live Active Gesture Badge inside Camera View */}
-        <div className="absolute top-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono bg-slate-950/90 px-2.5 py-1 rounded border border-slate-800">
-          <span className={`font-semibold truncate ${activeGestureMeta.badgeColor}`}>
+        <div className="absolute top-2 left-2 right-2 flex items-center gap-2 text-[11px] font-medium bg-ink-950/80 backdrop-blur px-2.5 py-1.5 rounded-lg border border-white/10">
+          {cameraActive && <span className="live-dot shrink-0" />}
+          <span className={`truncate ${activeGestureMeta.badgeColor}`}>
             {activeGestureMeta.icon}{' '}
-            {telemetry.primaryGesture === 'IDLE'
-              ? 'Chờ cử chỉ tay...'
-              : activeGestureMeta.title.replace(/^[^\s]+\s/, '')}
+            {telemetry.primaryGesture === 'IDLE' ? 'Đang chờ cử chỉ…' : activeGestureMeta.shortTitle}
           </span>
         </div>
 
-        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] font-mono bg-slate-950/90 px-2.5 py-1 rounded border border-slate-800 text-slate-300">
-          <span>ROLL(Z): {telemetry.handRollDeg}°</span>
-          <span>PITCH(X): {telemetry.handPitchDeg}°</span>
-          <span>ZOOM(Cái-Trỏ): {telemetry.zoomLevelNormalized.toFixed(2)}x</span>
+        <div className="absolute bottom-2 left-2 right-2 grid grid-cols-3 text-center text-[10px] font-mono bg-ink-950/80 backdrop-blur py-1 rounded-lg border border-white/10">
+          <span className="text-amber-300">Z {telemetry.handRollDeg}°</span>
+          <span className="text-emerald-300">X {telemetry.handPitchDeg}°</span>
+          <span className="text-cyan-300">{telemetry.zoomLevelNormalized.toFixed(2)}×</span>
         </div>
       </div>
 
       {cameraError && (
-        <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/50 rounded px-2.5 py-1.5">
+        <div className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
           {cameraError}
         </div>
       )}
 
-      {/* ✋ Palm 3D Orientation Controls (Roll Z, Pitch X, Yaw Y) */}
-      <div className="space-y-2 pt-1 border-t border-slate-800/80">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-slate-300 font-medium flex items-center gap-1">
-            <Rotate3d className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Độ nhạy đồng bộ bàn tay:</span>
-          </span>
-          <span className="font-mono text-cyan-300 font-semibold">{wristSensitivity.toFixed(1)}x</span>
+      {/* Mô phỏng cử chỉ */}
+      <div className="space-y-2">
+        <div className="text-[11px] text-slate-400 flex items-center gap-1.5 font-medium">
+          <Play className="w-3 h-3 text-cyan-400" />
+          Thử nhanh từng cử chỉ
         </div>
-        <input
-          type="range"
-          min={0.8}
-          max={2.6}
-          step={0.1}
-          value={wristSensitivity}
-          onChange={(e) => setWristSensitivity(parseFloat(e.target.value))}
-          className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-950 rounded-lg"
-        />
-
-        {/* Interactive 3-Axis Palm Orientation Sliders (Roll Z, Pitch X, Yaw Y) */}
-        <div className="bg-slate-950/90 border border-slate-800 rounded-md p-2.5 space-y-2">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="font-semibold text-slate-200">✋ Đồng Bộ Góc Nghiêng Bàn Tay (3D):</span>
-            <button
-              onClick={() => onVirtualWristChange({ pitch: 0, yaw: 0, roll: 0 })}
-              className="text-[10px] font-mono text-cyan-400 hover:underline cursor-pointer"
-            >
-              Đặt thẳng (0°)
-            </button>
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex justify-between text-[10px] font-mono">
-              <span className="text-slate-400">Nghiêng cổ tay trái/phải (Roll - Trục Z):</span>
-              <span className="text-amber-300">{virtualWristDeg.roll}°</span>
-            </div>
-            <input
-              type="range"
-              min={-90}
-              max={90}
-              value={virtualWristDeg.roll}
-              onChange={(e) =>
-                onVirtualWristChange({ ...virtualWristDeg, roll: parseInt(e.target.value, 10) })
-              }
-              className="w-full accent-amber-400 cursor-pointer h-1.5 bg-slate-900 rounded-lg"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex justify-between text-[10px] font-mono">
-              <span className="text-slate-400">Úp/ngửa bàn tay (Pitch - Trục X):</span>
-              <span className="text-emerald-300">{virtualWristDeg.pitch}°</span>
-            </div>
-            <input
-              type="range"
-              min={-90}
-              max={90}
-              value={virtualWristDeg.pitch}
-              onChange={(e) =>
-                onVirtualWristChange({ ...virtualWristDeg, pitch: parseInt(e.target.value, 10) })
-              }
-              className="w-full accent-emerald-400 cursor-pointer h-1.5 bg-slate-900 rounded-lg"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex justify-between text-[10px] font-mono">
-              <span className="text-slate-400">Xoay lòng bàn tay 360° (Yaw - Trục Y):</span>
-              <span className="text-cyan-300">{virtualWristDeg.yaw}°</span>
-            </div>
-            <input
-              type="range"
-              min={-180}
-              max={180}
-              value={virtualWristDeg.yaw}
-              onChange={(e) =>
-                onVirtualWristChange({ ...virtualWristDeg, yaw: parseInt(e.target.value, 10) })
-              }
-              className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-900 rounded-lg"
-            />
-          </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {simButtons.map((b) => {
+            const active = activeSim === b.id;
+            return (
+              <button
+                key={b.id}
+                onClick={() => onSimulateGesture(b.id)}
+                title={b.label}
+                className={`flex flex-col items-center gap-1 px-1.5 py-2 rounded-xl border text-[10.5px] leading-tight text-center cursor-pointer transition-all ${
+                  active
+                    ? 'bg-cyan-400/15 border-cyan-400/60 text-white'
+                    : `bg-white/[0.03] border-white/10 text-slate-300 ${b.ring}`
+                }`}
+              >
+                <span className="text-lg leading-none">{b.icon}</span>
+                <span>{b.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* 6 Gesture Simulator Buttons */}
-      <div className="pt-2 border-t border-slate-800/80">
-        <div className="text-[11px] text-slate-300 mb-2 flex items-center gap-1.5 font-medium">
-          <Play className="w-3 h-3 text-cyan-400" />
-          <span>Mô phỏng nhanh 6 cử chỉ bàn tay:</span>
+      {/* Bộ đồng bộ góc bàn tay */}
+      <div className="space-y-3 pt-3 border-t border-white/5">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+            <Rotate3d className="w-3.5 h-3.5 text-cyan-400" />
+            Góc bàn tay ảo
+          </span>
+          <button
+            onClick={() => onVirtualWristChange({ pitch: 0, yaw: 0, roll: 0 })}
+            className="text-[10.5px] font-mono text-cyan-300 hover:text-cyan-200 cursor-pointer"
+          >
+            Đặt về 0°
+          </button>
         </div>
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            onClick={() => onSimulateGesture('PALM_3D')}
-            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded text-[11px] text-cyan-300 font-medium text-left transition-colors whitespace-nowrap truncate cursor-pointer"
-          >
-            ✋ Xòe Tay (Roll/Pitch/Yaw)
-          </button>
-          <button
-            onClick={() => onSimulateGesture('PEACE_TOP')}
-            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded text-[11px] text-sky-300 font-medium text-left transition-colors whitespace-nowrap truncate cursor-pointer"
-          >
-            ✌️ Chữ V (Nhìn Từ Đỉnh)
-          </button>
-          <button
-            onClick={() => onSimulateGesture('THUMBS_UP_UNZIP')}
-            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded text-[11px] text-orange-300 font-medium text-left transition-colors whitespace-nowrap truncate cursor-pointer"
-          >
-            👍 Ngón Cái (Tách Mạch/Nu)
-          </button>
-          <button
-            onClick={() => onSimulateGesture('PINCH_ZOOM')}
-            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded text-[11px] text-amber-300 font-medium text-left transition-colors whitespace-nowrap truncate cursor-pointer"
-          >
-            👌 Cái + Trỏ (Zoom Ra/Vào)
-          </button>
-          <button
-            onClick={() => onSimulateGesture('FIST_INERTIA')}
-            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded text-[11px] text-fuchsia-300 font-medium text-left transition-colors whitespace-nowrap truncate cursor-pointer"
-          >
-            ✊ Nắm Tay (Xoay Quán Tính)
-          </button>
-          <button
-            onClick={() => onSimulateGesture('POINT_INSPECT')}
-            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded text-[11px] text-emerald-300 font-medium text-left transition-colors whitespace-nowrap truncate cursor-pointer"
-          >
-            👉 1 Ngón Trỏ (Thẻ A,T,G,C,U)
-          </button>
+
+        {axes.map((a) => (
+          <div key={a.key} className="space-y-1.5">
+            <div className="flex justify-between text-[10.5px]">
+              <span className="text-slate-400">
+                {a.label} <span className="font-mono text-slate-600">· {a.axis}</span>
+              </span>
+              <span className="font-mono" style={{ color: a.color }}>
+                {virtualWristDeg[a.key]}°
+              </span>
+            </div>
+            <input
+              type="range"
+              min={a.min}
+              max={a.max}
+              value={virtualWristDeg[a.key]}
+              onChange={(e) =>
+                onVirtualWristChange({ ...virtualWristDeg, [a.key]: parseInt(e.target.value, 10) })
+              }
+              className="range"
+              style={rangeStyle(virtualWristDeg[a.key], a.min, a.max, a.color)}
+              aria-label={a.label}
+            />
+          </div>
+        ))}
+
+        <div className="space-y-1.5 pt-1">
+          <div className="flex justify-between text-[10.5px]">
+            <span className="text-slate-400">Độ nhạy camera</span>
+            <span className="font-mono text-cyan-300">{wristSensitivity.toFixed(1)}×</span>
+          </div>
+          <input
+            type="range"
+            min={0.8}
+            max={2.6}
+            step={0.1}
+            value={wristSensitivity}
+            onChange={(e) => setWristSensitivity(parseFloat(e.target.value))}
+            className="range"
+            style={rangeStyle(wristSensitivity, 0.8, 2.6, '#a78bfa')}
+            aria-label="Độ nhạy camera"
+          />
         </div>
       </div>
     </div>
