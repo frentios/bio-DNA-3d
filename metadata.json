@@ -1,0 +1,8 @@
+{
+  "name": "BioMotion 3D",
+  "description": "Interact with high-precision DNA models using intuitive hand gestures for rotation, zooming, and molecular exploration via computer vision.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
